@@ -11,20 +11,30 @@ jobs:
   generate:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      CAN_GENERATE: ${{ secrets.OPENAI_API_KEY != '' && secrets.CLOUDFLARE_ACCOUNT_ID != '' && secrets.CLOUDFLARE_API_TOKEN != '' && secrets.D1_DATABASE_ID != '' && secrets.R2_BUCKET_NAME != '' && secrets.R2_ACCESS_KEY_ID != '' && secrets.R2_SECRET_ACCESS_KEY != '' && secrets.PUBLIC_SITE_URL != '' }}
     steps:
+      - name: Skip until secrets are configured
+        if: env.CAN_GENERATE != 'true'
+        run: echo "Daily generator skipped because required GitHub Actions secrets are not configured yet."
+
       - name: Checkout
+        if: env.CAN_GENERATE == 'true'
         uses: actions/checkout@v5
 
       - name: Setup Node
+        if: env.CAN_GENERATE == 'true'
         uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
 
       - name: Install dependencies
+        if: env.CAN_GENERATE == 'true'
         run: npm ci
 
       - name: Generate daily item
+        if: env.CAN_GENERATE == 'true'
         run: npm run generate:daily
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
@@ -41,4 +51,3 @@ jobs:
           APP_TIMEZONE: Europe/Berlin
           DEFAULT_MODE: fictional_satire_news
           DEFAULT_LANGUAGE: en
-

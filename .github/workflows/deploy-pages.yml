@@ -9,26 +9,36 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    env:
+      CAN_DEPLOY: ${{ secrets.CLOUDFLARE_ACCOUNT_ID != '' && secrets.CLOUDFLARE_API_TOKEN != '' && secrets.CLOUDFLARE_PAGES_PROJECT_NAME != '' }}
     steps:
+      - name: Skip until secrets are configured
+        if: env.CAN_DEPLOY != 'true'
+        run: echo "Cloudflare Pages deploy skipped because required GitHub Actions secrets are not configured yet."
+
       - name: Checkout
+        if: env.CAN_DEPLOY == 'true'
         uses: actions/checkout@v5
 
       - name: Setup Node
+        if: env.CAN_DEPLOY == 'true'
         uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
 
       - name: Install dependencies
+        if: env.CAN_DEPLOY == 'true'
         run: npm ci
 
       - name: Build
+        if: env.CAN_DEPLOY == 'true'
         run: npm run build
 
       - name: Deploy
+        if: env.CAN_DEPLOY == 'true'
         run: npx wrangler pages deploy dist --project-name "$CLOUDFLARE_PAGES_PROJECT_NAME" --branch main
         env:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_PAGES_PROJECT_NAME: ${{ secrets.CLOUDFLARE_PAGES_PROJECT_NAME }}
-
