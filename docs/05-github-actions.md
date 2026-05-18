@@ -63,6 +63,106 @@ Required:
 
 `VAPID_PRIVATE_KEY` and `VAPID_CONTACT_EMAIL` are only needed for sending notifications. Generation still works without them, but subscribed devices will not receive pushes.
 
+## Add GitHub Secrets Step By Step
+
+Open:
+
+```text
+https://github.com/MaxSch17799/Daily-Content/settings/secrets/actions
+```
+
+Then click `New repository secret` for each value below.
+
+### 1. OpenAI API Key
+
+You already added this one.
+
+```text
+Name: OPENAI_API_KEY
+Value: your OpenAI API key
+```
+
+### 2. Cloudflare API Token
+
+This token lets GitHub Actions deploy Pages and write to D1.
+
+Create it:
+
+1. Open `https://dash.cloudflare.com/profile/api-tokens`.
+2. Click `Create Token`.
+3. Use `Edit Cloudflare Workers` if you want the quickest broad setup, or create a custom token.
+4. For a custom token, include permissions for:
+   - Account -> Cloudflare Pages -> Edit
+   - Account -> D1 -> Edit
+   - Account -> Workers Scripts -> Edit
+   - Account -> Account Settings -> Read
+5. Scope it to your account.
+6. Create the token and copy it once.
+
+Add it to GitHub:
+
+```text
+Name: CLOUDFLARE_API_TOKEN
+Value: the Cloudflare API token
+```
+
+### 3. R2 Access Keys
+
+These let GitHub Actions upload generated images into the `images` bucket.
+
+Create them:
+
+1. Open Cloudflare dashboard.
+2. Go to `R2`.
+3. Click `Manage R2 API tokens`.
+4. Click `Create API token`.
+5. Give it object read/write access to the `images` bucket.
+6. Copy the generated `Access Key ID` and `Secret Access Key`.
+
+Add both to GitHub:
+
+```text
+Name: R2_ACCESS_KEY_ID
+Value: the R2 Access Key ID
+```
+
+```text
+Name: R2_SECRET_ACCESS_KEY
+Value: the R2 Secret Access Key
+```
+
+### 4. VAPID Private Key
+
+The VAPID public key is already configured. The private key is needed so GitHub Actions can send browser push notifications.
+
+Use the generated private key from local setup:
+
+```text
+Name: VAPID_PRIVATE_KEY
+Value: the generated VAPID private key
+```
+
+### 5. VAPID Contact Email
+
+This identifies the sender for Web Push. Use your email address.
+
+```text
+Name: VAPID_CONTACT_EMAIL
+Value: your email address
+```
+
+## Check Whether Secrets Are Ready
+
+After adding the secrets:
+
+1. Open `https://github.com/MaxSch17799/Daily-Content/actions`.
+2. Open `Deploy Cloudflare Pages`.
+3. Click `Run workflow`.
+4. Open `Daily content generation`.
+5. Click `Run workflow`.
+
+If a workflow says it skipped because secrets are missing, re-check the secret names exactly.
+
 ## Cloudflare API Token Permissions
 
 The generator needs to query/write D1.

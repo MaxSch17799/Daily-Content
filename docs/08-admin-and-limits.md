@@ -26,6 +26,8 @@ The first version supports:
 wrangler pages secret put ADMIN_PASSWORD --project-name YOUR_PAGES_PROJECT_NAME
 ```
 
+This has already been set for the `daily-content` Pages project.
+
 ## Public Lock
 
 Public lock makes public API data require the viewer password.
@@ -37,6 +39,8 @@ Set viewer password:
 ```bash
 wrangler pages secret put VIEWER_PASSWORD --project-name YOUR_PAGES_PROJECT_NAME
 ```
+
+This has already been set for the `daily-content` Pages project.
 
 ## Automatic Guardrails
 
@@ -76,4 +80,3 @@ wrangler pages secret put GITHUB_DISPATCH_TOKEN --project-name YOUR_PAGES_PROJEC
 The token must be allowed to dispatch workflows in this GitHub repository.
 
 If this is not configured, use the GitHub Actions UI to run the generator manually.
-

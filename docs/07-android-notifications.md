@@ -59,7 +59,7 @@ VAPID_PUBLIC_KEY=BKMUeuRpsIpT_aheckXaIoZIpTeJI6JgatsJInVgLnJE1M1K8q9nSBc0ynWbM9M
 wrangler pages secret put SUBSCRIBE_PASSWORD --project-name YOUR_PAGES_PROJECT_NAME
 ```
 
-The same password is not needed in GitHub.
+This has already been set for the `daily-content` Pages project. The same password is not needed in GitHub.
 
 ## Limits
 

@@ -32,12 +32,12 @@ npm.cmd run build
    - D1 binding `DB`
    - R2 binding `IMAGES`
 6. Add Pages secrets:
-   - `VIEWER_PASSWORD`
-   - `SUBSCRIBE_PASSWORD`
-   - `ADMIN_PASSWORD`
-   - `VAPID_PUBLIC_KEY`
-7. Run D1 migrations.
-8. Deploy Pages.
+   - `VIEWER_PASSWORD`. Done.
+   - `SUBSCRIBE_PASSWORD`. Done.
+   - `ADMIN_PASSWORD`. Done.
+   - `VAPID_PUBLIC_KEY`. Done.
+7. Run D1 migrations. Done.
+8. Deploy Pages. Done.
 
 ## GitHub Secrets
 
