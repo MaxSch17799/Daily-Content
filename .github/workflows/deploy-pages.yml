@@ -11,7 +11,8 @@ jobs:
     timeout-minutes: 20
     env:
       CLOUDFLARE_ACCOUNT_ID: f564988478746167a2d9fabbad78a203
-      CAN_DEPLOY: ${{ secrets.CLOUDFLARE_API_TOKEN != '' && secrets.CLOUDFLARE_PAGES_PROJECT_NAME != '' }}
+      CLOUDFLARE_PAGES_PROJECT_NAME: daily-content
+      CAN_DEPLOY: ${{ secrets.CLOUDFLARE_API_TOKEN != '' }}
     steps:
       - name: Skip until secrets are configured
         if: env.CAN_DEPLOY != 'true'
@@ -42,4 +43,4 @@ jobs:
         env:
           CLOUDFLARE_ACCOUNT_ID: ${{ env.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_PAGES_PROJECT_NAME: ${{ secrets.CLOUDFLARE_PAGES_PROJECT_NAME }}
+          CLOUDFLARE_PAGES_PROJECT_NAME: ${{ env.CLOUDFLARE_PAGES_PROJECT_NAME }}

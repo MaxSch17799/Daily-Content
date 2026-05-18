@@ -15,7 +15,8 @@ jobs:
       CLOUDFLARE_ACCOUNT_ID: f564988478746167a2d9fabbad78a203
       D1_DATABASE_ID: c57001e6-7d81-420f-b8b1-1f4266cb4e74
       R2_BUCKET_NAME: images
-      CAN_GENERATE: ${{ secrets.OPENAI_API_KEY != '' && secrets.CLOUDFLARE_API_TOKEN != '' && secrets.R2_ACCESS_KEY_ID != '' && secrets.R2_SECRET_ACCESS_KEY != '' && secrets.PUBLIC_SITE_URL != '' }}
+      PUBLIC_SITE_URL: https://daily-content.pages.dev
+      CAN_GENERATE: ${{ secrets.OPENAI_API_KEY != '' && secrets.CLOUDFLARE_API_TOKEN != '' && secrets.R2_ACCESS_KEY_ID != '' && secrets.R2_SECRET_ACCESS_KEY != '' }}
     steps:
       - name: Skip until secrets are configured
         if: env.CAN_GENERATE != 'true'
@@ -47,7 +48,7 @@ jobs:
           R2_BUCKET_NAME: ${{ env.R2_BUCKET_NAME }}
           R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-          PUBLIC_SITE_URL: ${{ secrets.PUBLIC_SITE_URL }}
+          PUBLIC_SITE_URL: ${{ env.PUBLIC_SITE_URL }}
           VAPID_PUBLIC_KEY: ${{ secrets.VAPID_PUBLIC_KEY }}
           VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
           VAPID_CONTACT_EMAIL: ${{ secrets.VAPID_CONTACT_EMAIL }}

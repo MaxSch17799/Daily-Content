@@ -39,6 +39,8 @@ These values are not treated as secrets and are already in the workflow:
 CLOUDFLARE_ACCOUNT_ID=f564988478746167a2d9fabbad78a203
 D1_DATABASE_ID=c57001e6-7d81-420f-b8b1-1f4266cb4e74
 R2_BUCKET_NAME=images
+PUBLIC_SITE_URL=https://daily-content.pages.dev
+CLOUDFLARE_PAGES_PROJECT_NAME=daily-content
 ```
 
 ## Required GitHub Secrets
@@ -55,14 +57,9 @@ Required:
 - `CLOUDFLARE_API_TOKEN`
 - `R2_ACCESS_KEY_ID`
 - `R2_SECRET_ACCESS_KEY`
-- `PUBLIC_SITE_URL`
 - `VAPID_PUBLIC_KEY`
 - `VAPID_PRIVATE_KEY`
 - `VAPID_CONTACT_EMAIL`
-
-Also required for the deploy workflow:
-
-- `CLOUDFLARE_PAGES_PROJECT_NAME`
 
 ## Cloudflare API Token Permissions
 
