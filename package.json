@@ -9,8 +9,8 @@
     "preview": "vite preview",
     "cf:dev": "npm run build && wrangler pages dev dist",
     "cf:deploy": "npm run build && wrangler pages deploy dist",
-    "db:migrate:local": "wrangler d1 migrations apply daily-content-db --local",
-    "db:migrate:remote": "wrangler d1 migrations apply daily-content-db --remote",
+    "db:migrate:local": "wrangler d1 migrations apply db --local",
+    "db:migrate:remote": "wrangler d1 migrations apply db --remote",
     "generate:daily": "tsx scripts/generate-daily.ts",
     "modes:sync": "tsx scripts/sync-modes.ts",
     "vapid:generate": "web-push generate-vapid-keys --json"
@@ -37,4 +37,3 @@
     "wrangler": "^4.92.0"
   }
 }
-
