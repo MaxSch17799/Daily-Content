@@ -25,9 +25,9 @@ npm.cmd run build
 ## Cloudflare
 
 1. Create Pages project.
-2. Create D1 database.
-3. Create R2 bucket.
-4. Update `wrangler.jsonc` with the real D1 database ID.
+2. Create D1 database. Done: `db`, `c57001e6-7d81-420f-b8b1-1f4266cb4e74`.
+3. Create R2 bucket. Done: `images`.
+4. Update `wrangler.jsonc` with the real D1 database ID. Done.
 5. Add Pages bindings:
    - D1 binding `DB`
    - R2 binding `IMAGES`
@@ -72,9 +72,8 @@ When you want me to wire the real deployment details into the repo, give me:
 
 - Cloudflare Pages project name.
 - D1 database ID.
-- R2 bucket name if different from `daily-content-images`.
+- R2 bucket name if different from `images`.
 - Public site URL.
 - Whether the GitHub repo is private or public.
 
 Do not paste long-lived API secrets into normal chat unless you are comfortable doing that. Prefer adding them directly in Cloudflare/GitHub dashboards.
-

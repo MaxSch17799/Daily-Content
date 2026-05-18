@@ -12,16 +12,20 @@ D1 stores:
 
 ## Create The Database
 
-```bash
-npx wrangler d1 create daily-content-db
+You created this database:
+
+```text
+database_name: db
+database_id: c57001e6-7d81-420f-b8b1-1f4266cb4e74
 ```
 
 Cloudflare returns a `database_id`.
 
-Copy that ID into `wrangler.jsonc`:
+That ID is already wired into `wrangler.jsonc`:
 
 ```json
-"database_id": "YOUR_D1_DATABASE_ID"
+"database_name": "db",
+"database_id": "c57001e6-7d81-420f-b8b1-1f4266cb4e74"
 ```
 
 Also save it as a GitHub Actions secret named:
@@ -75,4 +79,3 @@ The migration sets:
 - `active_language = en`
 - `public_lock = 0`
 - `timezone = Europe/Berlin`
-

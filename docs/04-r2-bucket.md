@@ -4,8 +4,11 @@ R2 stores generated PNG images.
 
 ## Create Bucket
 
-```bash
-npx wrangler r2 bucket create daily-content-images
+You created this bucket:
+
+```text
+bucket_name: images
+bucket_url: https://f564988478746167a2d9fabbad78a203.r2.cloudflarestorage.com/images
 ```
 
 The Worker binding name must be:
@@ -14,10 +17,10 @@ The Worker binding name must be:
 IMAGES
 ```
 
-The bucket name defaults to:
+The bucket name is wired in `wrangler.jsonc` as:
 
 ```text
-daily-content-images
+images
 ```
 
 ## Create R2 API Token
@@ -51,4 +54,3 @@ The site uses:
 That route reads from R2 through the `IMAGES` binding and returns long cache headers.
 
 This means no public R2 domain is required for the first version.
-
