@@ -346,12 +346,13 @@ Recommended MVP model choices:
 
 ## Content Modes
 
-Start with four modes:
+Start with five modes:
 
 1. `interesting_fact`
 2. `daily_joke`
 3. `fictional_satire_news`
 4. `historical_event`
+5. `absurd_tech_breakthrough`
 
 The default active mode for the MVP is `fictional_satire_news`.
 

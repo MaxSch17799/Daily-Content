@@ -46,6 +46,12 @@ PowerShell fallback:
 npm.cmd run db:migrate:remote
 ```
 
+Current migrations:
+
+- `0001_initial.sql`: creates the app tables and baseline modes.
+- `0002_allow_multiple_items_per_day.sql`: removes the unique-per-date item constraint.
+- `0003_add_absurd_tech_breakthrough_mode.sql`: adds the absurd technology breakthrough mode.
+
 ## Sync Mode Configs
 
 The editable mode files live in `modes/en/*.yaml`.

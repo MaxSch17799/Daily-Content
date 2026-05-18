@@ -53,6 +53,7 @@ Expected result:
 
 - Admin dashboard loads.
 - Active mode is `fictional_satire_news`.
+- The mode picker includes `Absurd Tech Breakthrough`.
 - Usage counters and generation runs are visible.
 
 ### 3. Run The Generator

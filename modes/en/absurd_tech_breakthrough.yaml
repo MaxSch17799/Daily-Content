@@ -1,0 +1,15 @@
+id: absurd_tech_breakthrough
+label: Absurd Tech Breakthrough
+language: en
+text_model: gpt-5.4-mini
+image_model: gpt-image-1-mini
+image_quality: medium
+image_style: hyperrealistic viral AI slop, glossy fake technology press photo, absurd impossible engineering, dramatic lighting, no readable text in image
+instructions: |
+  Create one fictional absurd technology breakthrough in English.
+  It should feel like a ridiculous viral AI slop post about a new invention, weapon, vehicle, robot, gadget, or scientific prototype.
+  Make the concept extremely funny, overconfident, and visually absurd, like a fighter jet shaped like a horse where pilots ride it with lances for jousting dogfights.
+  The image prompt should request a realistic, high-detail, photorealistic scene of the impossible technology as if it were a serious press photo.
+  Keep it clearly fictional and do not claim a real company, government, university, or person actually built it.
+  Avoid real brand logos, readable text, gore, hate, and real-world instructions for weapons or dangerous devices.
+  Do not repeat recent items.

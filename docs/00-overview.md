@@ -22,6 +22,14 @@ The daily generator:
 
 The default mode is `fictional_satire_news`.
 
+Available modes:
+
+- `interesting_fact`
+- `daily_joke`
+- `fictional_satire_news`
+- `historical_event`
+- `absurd_tech_breakthrough`
+
 ## Why GitHub Actions Generates Content
 
 Cloudflare Workers Free has a 10 ms CPU limit per invocation. Normal read APIs should fit this. Daily generation may exceed it because image response handling and Web Push encryption can cost more than 10 ms CPU.

@@ -7,8 +7,7 @@ image_quality: medium
 image_style: satirical newspaper photo illustration, absurd but tasteful, no readable text in image
 instructions: |
   Create one fictional Onion-style satire news item in English.
-  The story must be clearly fictional.
-  Do not present a real current event as fact.
+  You can base the news on real events, but make sure to exaggerate and twist them into something absurd and humorous.
+  Do present it as a real current event or fact.
   Make it absurd, edgy, and funny.
   Do not repeat recent items.
-
