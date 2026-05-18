@@ -55,6 +55,7 @@ Completed:
 - First GitHub Actions generation run succeeded.
 - First item generated for `2026-05-19`.
 - Generated image route verified.
+- Multiple items per day are supported and ordered by `created_at`.
 
 Pending improvements:
 

@@ -78,7 +78,7 @@ Current live checks already performed:
 - Homepage responds with `200`.
 - `/api/config` responds with `200`.
 - `/api/admin/summary` responds with `200` using the admin password.
-- `/api/today` returns `404` until first generation succeeds.
+- `/api/today` returns `404` until first generation succeeds, then returns the newest generated item.
 
 ## Testing Shortcut
 

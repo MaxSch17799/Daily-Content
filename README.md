@@ -43,13 +43,14 @@ Start with these docs:
 - GitHub Actions generation: first manual run succeeded.
 - First generated item date: `2026-05-19`.
 - Generated image delivery: verified with `image/png` response.
+- Multiple generated items per day are supported after migration `0002_allow_multiple_items_per_day.sql`.
 
 Current live state:
 
 - `/` loads the app.
 - `/api/config` returns the VAPID public config.
 - `/api/admin/summary` works with admin password.
-- `/api/today` returns today's generated item.
+- `/api/today` returns the newest generated item by timestamp.
 
 ## Useful Commands
 

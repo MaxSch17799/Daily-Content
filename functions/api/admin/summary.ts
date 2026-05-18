@@ -18,7 +18,7 @@ export const onRequestGet = async ({ env, request }: FunctionContext) => {
       `SELECT id, date, mode, language, title, notification_text, summary, full_text,
               image_prompt, image_r2_key, uniqueness_key, tags_json, created_at
        FROM items
-       ORDER BY date DESC
+       ORDER BY created_at DESC
        LIMIT 30`
     ).all<ItemRow>(),
     env.DB.prepare("SELECT * FROM usage_counters ORDER BY day DESC, requests DESC LIMIT 60").all<UsageCounterRow>(),

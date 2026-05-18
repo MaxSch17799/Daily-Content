@@ -11,10 +11,6 @@ interface SettingRow {
   value: string;
 }
 
-interface ExistingItemRow {
-  id: string;
-}
-
 interface RecentItemRow {
   title: string;
   uniqueness_key: string;
@@ -29,7 +25,7 @@ async function main() {
   const siteUrl = requiredEnv("PUBLIC_SITE_URL").replace(/\/$/, "");
   const timeZone = optionalEnv("APP_TIMEZONE", "Europe/Berlin");
   const language = optionalEnv("DEFAULT_LANGUAGE", "en");
-  const forceGenerate = boolEnv("FORCE_GENERATE", false);
+  const skipIfExistsToday = boolEnv("SKIP_IF_EXISTS_TODAY", false);
   const today = localDate(timeZone);
 
   const d1 = new CloudflareD1Client(accountId, databaseId, cloudflareToken);
@@ -43,11 +39,13 @@ async function main() {
   );
 
   try {
-    const existing = await d1.first<ExistingItemRow>("SELECT id FROM items WHERE date = ? LIMIT 1", [today]);
-    if (existing && !forceGenerate) {
-      await finishRun(d1, runId, "skipped", `Item already exists for ${today}: ${existing.id}`);
-      console.log(`Item already exists for ${today}. Use FORCE_GENERATE=true to overwrite.`);
-      return;
+    if (skipIfExistsToday) {
+      const existing = await d1.first<{ id: string }>("SELECT id FROM items WHERE date = ? LIMIT 1", [today]);
+      if (existing) {
+        await finishRun(d1, runId, "skipped", `Item already exists for ${today}: ${existing.id}`);
+        console.log(`Item already exists for ${today}. SKIP_IF_EXISTS_TODAY=true prevented another item.`);
+        return;
+      }
     }
 
     const activeMode =
@@ -63,7 +61,7 @@ async function main() {
       `SELECT title, uniqueness_key
        FROM items
        WHERE mode = ?
-       ORDER BY date DESC
+       ORDER BY created_at DESC
        LIMIT 60`,
       [mode.id]
     );
@@ -85,7 +83,9 @@ async function main() {
     });
 
     const itemId = randomUUID();
-    const imageKey = `${today}-${mode.id}-${itemId}.png`;
+    const createdAt = new Date().toISOString();
+    const timestampSlug = createdAt.replace(/[:.]/g, "-");
+    const imageKey = `${today}-${timestampSlug}-${mode.id}-${itemId}.png`;
     const r2 = createR2Client({
       accountId,
       accessKeyId: requiredEnv("R2_ACCESS_KEY_ID"),
@@ -100,27 +100,12 @@ async function main() {
       body: imageBuffer
     });
 
-    const createdAt = new Date().toISOString();
     await d1.query(
       `INSERT INTO items (
          id, date, mode, language, title, notification_text, summary, full_text,
          image_prompt, image_r2_key, uniqueness_key, tags_json, published, created_at
        )
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
-       ON CONFLICT(date) DO UPDATE SET
-         id = excluded.id,
-         mode = excluded.mode,
-         language = excluded.language,
-         title = excluded.title,
-         notification_text = excluded.notification_text,
-         summary = excluded.summary,
-         full_text = excluded.full_text,
-         image_prompt = excluded.image_prompt,
-         image_r2_key = excluded.image_r2_key,
-         uniqueness_key = excluded.uniqueness_key,
-         tags_json = excluded.tags_json,
-         published = 1,
-         created_at = excluded.created_at`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)`,
       [
         itemId,
         today,
@@ -189,4 +174,3 @@ main().catch((error) => {
   console.error(error);
   process.exitCode = 1;
 });
-

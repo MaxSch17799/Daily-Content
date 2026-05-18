@@ -1,6 +1,6 @@
 CREATE TABLE IF NOT EXISTS items (
   id TEXT PRIMARY KEY,
-  date TEXT NOT NULL UNIQUE,
+  date TEXT NOT NULL,
   mode TEXT NOT NULL,
   language TEXT NOT NULL DEFAULT 'en',
   title TEXT NOT NULL,
@@ -15,8 +15,9 @@ CREATE TABLE IF NOT EXISTS items (
   created_at TEXT NOT NULL
 );
 
-CREATE INDEX IF NOT EXISTS idx_items_date ON items(date DESC);
-CREATE INDEX IF NOT EXISTS idx_items_mode_date ON items(mode, date DESC);
+CREATE INDEX IF NOT EXISTS idx_items_date ON items(date DESC, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_items_created_at ON items(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_items_mode_date ON items(mode, date DESC, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_items_uniqueness ON items(mode, uniqueness_key);
 
 CREATE TABLE IF NOT EXISTS modes (
@@ -154,4 +155,3 @@ VALUES
     1,
     datetime('now')
   );
-

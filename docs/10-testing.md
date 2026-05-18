@@ -14,6 +14,7 @@ These checks have already passed:
 - The remote D1 migration has been applied.
 - Cloudflare Pages secrets have been set for admin, viewer, subscriber, and VAPID public key.
 - The first manual GitHub Actions generation run succeeded.
+- Multiple items per day are supported after migration `0002_allow_multiple_items_per_day.sql`.
 
 Before the first generated item existed, this returned `404`:
 
@@ -70,6 +71,8 @@ Expected result:
 - The workflow logs a successful `generation_runs` row.
 - If there are push subscribers, it sends notifications.
 
+Manual workflow runs can create multiple same-day items. The homepage shows the newest item by `created_at`; the archive keeps the older items.
+
 ### 4. Verify Today's Item
 
 Open:
@@ -81,6 +84,7 @@ https://daily-content.pages.dev
 Expected result:
 
 - Today's satire item appears with image and text.
+- If multiple items were generated today, the newest one appears.
 
 Also check:
 

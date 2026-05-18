@@ -11,7 +11,7 @@ export function ItemView({ item, compact = false }: { item: DailyItem; compact?:
         <div className="meta-line">
           <span>
             <Calendar size={16} aria-hidden />
-            {item.date}
+            {formatTimestamp(item.createdAt)}
           </span>
           <span>{formatMode(item.mode)}</span>
         </div>
@@ -45,3 +45,13 @@ function formatMode(mode: string): string {
     .join(" ");
 }
 
+function formatTimestamp(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+  return new Intl.DateTimeFormat("en", {
+    dateStyle: "medium",
+    timeStyle: "medium"
+  }).format(date);
+}

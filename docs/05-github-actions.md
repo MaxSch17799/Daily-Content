@@ -198,7 +198,9 @@ Preferred first test:
 3. Click `Run workflow`.
 4. Wait for the run to finish.
 5. Open `https://daily-content.pages.dev`.
-6. If the run succeeded, today's generated item should appear.
+6. If the run succeeded, the newest generated item should appear.
+
+Manual workflow runs can create multiple items on the same day. Each item is stored with a unique ID and a `created_at` timestamp down to the second/millisecond.
 
 The admin page has a `Run generator` button, but it only works if `GITHUB_DISPATCH_TOKEN` is also set as a Cloudflare Pages secret. That optional token is not required if you manually run the workflow from GitHub Actions.
 
@@ -215,16 +217,19 @@ Create a Cloudflare API token with only the permissions needed for:
 
 If that is annoying at first, use a broader account token for testing, then narrow it later.
 
-## Duplicate Protection
+## Same-Day Generation Behavior
 
-The generator checks whether an item already exists for today's Europe/Berlin date.
+The app supports multiple generated items per day.
 
-If it exists, the workflow skips generation.
+Manual runs:
 
-To force replacement, run with:
+- Default to generating another item, even if today already has one.
+- Save each item with a unique `id`, `created_at` timestamp, and timestamped R2 image key.
+- Show the newest item on the homepage.
 
-```text
-FORCE_GENERATE=true
-```
+Scheduled runs:
 
-That can be added temporarily to the workflow environment or used locally.
+- Use `SKIP_IF_EXISTS_TODAY=true` to avoid accidental duplicate scheduled runs on the same date.
+- Tomorrow's scheduled run should create the next daily item.
+
+The manual GitHub workflow includes an optional `skip_if_exists_today` input if you intentionally want a manual run to behave like the scheduled run.

@@ -2,6 +2,12 @@ name: Daily content generation
 
 on:
   workflow_dispatch:
+    inputs:
+      skip_if_exists_today:
+        description: "Skip generation if today's date already has an item"
+        required: false
+        default: "false"
+        type: boolean
   schedule:
     # 05:23 UTC is 06:23 in Berlin winter time and 07:23 in Berlin summer time.
     # Exact timing is not important for this project.
@@ -56,3 +62,4 @@ jobs:
           APP_TIMEZONE: Europe/Berlin
           DEFAULT_MODE: fictional_satire_news
           DEFAULT_LANGUAGE: en
+          SKIP_IF_EXISTS_TODAY: ${{ github.event_name == 'schedule' && 'true' || inputs.skip_if_exists_today }}

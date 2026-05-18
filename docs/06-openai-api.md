@@ -23,7 +23,7 @@ Start with a low monthly budget, such as:
 $5/month
 ```
 
-At one generated item per day, medium images should be comfortably below that unless there are many retries or manual experiments.
+At one generated item per day, medium images should be comfortably below that unless there are many retries or manual experiments. Multiple manual generations per day are supported, but each additional generation can add OpenAI image cost.
 
 ## Models
 
@@ -62,4 +62,3 @@ The generator calls the OpenAI Images API with:
 - medium quality by default
 
 The generated image is uploaded to R2.
-

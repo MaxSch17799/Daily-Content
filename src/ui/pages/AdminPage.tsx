@@ -165,13 +165,24 @@ export function AdminPage() {
 
           <AdminTable
             title="Recent items"
-            headers={["Date", "Mode", "Title"]}
-            rows={summary.recentItems.map((item) => [item.date, item.mode, item.title])}
+            headers={["Created", "Mode", "Title"]}
+            rows={summary.recentItems.map((item) => [formatTimestamp(item.createdAt), item.mode, item.title])}
           />
         </>
       )}
     </section>
   );
+}
+
+function formatTimestamp(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+  return new Intl.DateTimeFormat("en", {
+    dateStyle: "medium",
+    timeStyle: "medium"
+  }).format(date);
 }
 
 async function savePassword(
@@ -211,4 +222,3 @@ function AdminTable({ title, headers, rows }: { title: string; headers: string[]
     </section>
   );
 }
-
