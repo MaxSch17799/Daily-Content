@@ -40,14 +40,16 @@ Start with these docs:
 - R2 bucket: `images`
 - D1 migration: applied.
 - Cloudflare Pages secrets: admin, viewer, subscriber, and VAPID public key are set.
-- GitHub Actions generation: ready to test after the remaining GitHub Actions secrets are present.
+- GitHub Actions generation: first manual run succeeded.
+- First generated item date: `2026-05-19`.
+- Generated image delivery: verified with `image/png` response.
 
-Current expected state before first generation:
+Current live state:
 
 - `/` loads the app.
 - `/api/config` returns the VAPID public config.
 - `/api/admin/summary` works with admin password.
-- `/api/today` returns `404` until the first daily item is generated.
+- `/api/today` returns today's generated item.
 
 ## Useful Commands
 

@@ -9,16 +9,19 @@ These checks have already passed:
 - `https://daily-content.pages.dev` returns `200`.
 - `https://daily-content.pages.dev/api/config` returns `200` and includes the VAPID public key.
 - `https://daily-content.pages.dev/api/admin/summary` returns `200` when called with the admin password.
+- `https://daily-content.pages.dev/api/today` returns `200` after the first successful generation.
+- The generated image route returns `200` with `image/png`.
 - The remote D1 migration has been applied.
 - Cloudflare Pages secrets have been set for admin, viewer, subscriber, and VAPID public key.
+- The first manual GitHub Actions generation run succeeded.
 
-This check currently returns `404` until the first generated item exists:
+Before the first generated item existed, this returned `404`:
 
 ```text
 https://daily-content.pages.dev/api/today
 ```
 
-That `404` is expected before the first successful `Daily content generation` workflow run.
+That `404` is expected only before the first successful `Daily content generation` workflow run.
 
 ## Test Order
 

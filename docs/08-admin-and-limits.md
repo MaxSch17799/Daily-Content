@@ -88,3 +88,19 @@ The token must be allowed to dispatch workflows in this GitHub repository.
 If this is not configured, use the GitHub Actions UI to run the generator manually.
 
 Current status: `GITHUB_DISPATCH_TOKEN` has not been documented as set, so use GitHub Actions manual run for the first generation test.
+
+The system can generate daily content without this button. The scheduled GitHub Actions workflow and the manual `Run workflow` button in GitHub work independently.
+
+To make the admin button work:
+
+1. Create a GitHub fine-grained personal access token for `MaxSch17799/Daily-Content`.
+2. Give it permission to run workflows, usually `Actions: Read and write`.
+3. Copy the token.
+4. Set it as a Cloudflare Pages secret:
+
+```powershell
+'YOUR_GITHUB_TOKEN' | npx.cmd wrangler pages secret put GITHUB_DISPATCH_TOKEN --project-name daily-content
+```
+
+5. Redeploy the Pages project if Cloudflare asks for it.
+6. Open `/admin` and press `Run generator`.

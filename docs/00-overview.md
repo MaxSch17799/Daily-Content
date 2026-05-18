@@ -52,11 +52,14 @@ Completed:
 - Cloudflare Pages secrets set for admin, viewer, subscriber, and VAPID public key.
 - Site deployed and responding.
 - Admin API verified with `ADMIN_PASSWORD`.
+- First GitHub Actions generation run succeeded.
+- First item generated for `2026-05-19`.
+- Generated image route verified.
 
-Pending before the first generated item appears:
+Pending improvements:
 
-- Confirm remaining GitHub Actions secrets.
-- Run the `Daily content generation` workflow once.
+- Test Android notification subscription from a phone.
+- Optionally configure `GITHUB_DISPATCH_TOKEN` so the admin page can trigger GitHub Actions.
 
 ## Secrets Are Not Committed
 
