@@ -1,0 +1,14 @@
+id: interesting_fact
+label: Interesting Fact
+language: en
+text_model: gpt-5.4-mini
+image_model: gpt-image-1-mini
+image_quality: medium
+image_style: cinematic editorial illustration, accurate visual metaphor, no text in image
+instructions: |
+  Create one true, surprising, concise fact in English.
+  Make sure the fact is true.
+  Do not repeat recent items.
+  Avoid medical, financial, or legal advice.
+  Keep the tone curious and warm.
+

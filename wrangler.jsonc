@@ -1,0 +1,29 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "daily-content",
+  "compatibility_date": "2026-05-18",
+  "pages_build_output_dir": "dist",
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "daily-content-db",
+      "database_id": "REPLACE_WITH_D1_DATABASE_ID"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "IMAGES",
+      "bucket_name": "daily-content-images"
+    }
+  ],
+  "vars": {
+    "APP_TIMEZONE": "Europe/Berlin",
+    "PUBLIC_SOFT_DYNAMIC_REQUESTS": "50000",
+    "PUBLIC_HARD_DYNAMIC_REQUESTS": "80000",
+    "MAX_PUSH_SUBSCRIPTIONS": "25",
+    "GITHUB_OWNER": "MaxSch17799",
+    "GITHUB_REPO": "Daily-Content",
+    "GITHUB_WORKFLOW_ID": "daily-generate.yml"
+  }
+}
+

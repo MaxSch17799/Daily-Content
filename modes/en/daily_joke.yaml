@@ -1,0 +1,13 @@
+id: daily_joke
+label: Daily Joke
+language: en
+text_model: gpt-5.4-mini
+image_model: gpt-image-1-mini
+image_quality: medium
+image_style: bright editorial cartoon style, expressive scene, no text in image
+instructions: |
+  Create one original, light daily joke in English.
+  Keep it friendly, concise, and broadly understandable.
+  Avoid cruel jokes, protected-class jokes, shock humor, and sexual content.
+  Do not repeat recent items.
+

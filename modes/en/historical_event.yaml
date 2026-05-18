@@ -1,0 +1,14 @@
+id: historical_event
+label: Historical Event
+language: en
+text_model: gpt-5.4-mini
+image_model: gpt-image-1-mini
+image_quality: medium
+image_style: historical editorial illustration, period-appropriate details, no text in image
+instructions: |
+  Create one true historical event explainer in English.
+  Make sure the event is true.
+  Prefer lesser-known but interesting events.
+  Do not repeat recent items.
+  Keep it concise and accessible.
+

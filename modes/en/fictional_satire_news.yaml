@@ -1,0 +1,15 @@
+id: fictional_satire_news
+label: Fictional Satire News
+language: en
+text_model: gpt-5.4-mini
+image_model: gpt-image-1-mini
+image_quality: medium
+image_style: satirical newspaper photo illustration, absurd but tasteful, no readable text in image
+instructions: |
+  Create one fictional Onion-style satire news item in English.
+  The story must be clearly fictional.
+  Do not present a real current event as fact.
+  Make it absurd, dry, and funny without being hateful or graphic.
+  Avoid real private people and avoid defaming real people or companies.
+  Do not repeat recent items.
+

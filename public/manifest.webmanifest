@@ -1,0 +1,18 @@
+{
+  "name": "Daily Content",
+  "short_name": "Daily",
+  "description": "A daily AI-generated image and text archive.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f7f3ea",
+  "theme_color": "#f7f3ea",
+  "icons": [
+    {
+      "src": "/icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
+
