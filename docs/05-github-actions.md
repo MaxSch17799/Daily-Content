@@ -189,6 +189,19 @@ After adding the secrets:
 
 If a workflow says it skipped because secrets are missing, re-check the secret names exactly.
 
+## How To Test Generation
+
+Preferred first test:
+
+1. Open `https://github.com/MaxSch17799/Daily-Content/actions`.
+2. Open `Daily content generation`.
+3. Click `Run workflow`.
+4. Wait for the run to finish.
+5. Open `https://daily-content.pages.dev`.
+6. If the run succeeded, today's generated item should appear.
+
+The admin page has a `Run generator` button, but it only works if `GITHUB_DISPATCH_TOKEN` is also set as a Cloudflare Pages secret. That optional token is not required if you manually run the workflow from GitHub Actions.
+
 ## Cloudflare API Token Permissions
 
 The generator needs to query/write D1.

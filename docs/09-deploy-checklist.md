@@ -65,13 +65,24 @@ Already wired into workflow files:
 
 ## First Run
 
-1. Open GitHub Actions.
-2. Run `Deploy Cloudflare Pages`.
+1. Open `https://github.com/MaxSch17799/Daily-Content/actions`.
+2. Run `Deploy Cloudflare Pages` if you want to test GitHub-based deployment.
 3. Run `Daily content generation`.
-4. Open the deployed site.
+4. Open `https://daily-content.pages.dev`.
 5. Confirm today's satire item appears.
-6. Open `/admin` and check the run log.
-7. Open `/subscribe` from Android Chrome and enable notifications.
+6. Open `https://daily-content.pages.dev/admin` and check the run log.
+7. Open `https://daily-content.pages.dev/subscribe` from Android Chrome and enable notifications with the subscriber password.
+
+Current live checks already performed:
+
+- Homepage responds with `200`.
+- `/api/config` responds with `200`.
+- `/api/admin/summary` responds with `200` using the admin password.
+- `/api/today` returns `404` until first generation succeeds.
+
+## Testing Shortcut
+
+Use [Testing the system](10-testing.md) for the exact test order.
 
 ## What To Give Codex Later
 

@@ -8,6 +8,12 @@ The admin page is:
 
 It requires `ADMIN_PASSWORD`.
 
+Current production admin page:
+
+```text
+https://daily-content.pages.dev/admin
+```
+
 ## Admin Features
 
 The first version supports:
@@ -80,3 +86,5 @@ wrangler pages secret put GITHUB_DISPATCH_TOKEN --project-name YOUR_PAGES_PROJEC
 The token must be allowed to dispatch workflows in this GitHub repository.
 
 If this is not configured, use the GitHub Actions UI to run the generator manually.
+
+Current status: `GITHUB_DISPATCH_TOKEN` has not been documented as set, so use GitHub Actions manual run for the first generation test.

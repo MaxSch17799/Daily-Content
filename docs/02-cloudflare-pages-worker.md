@@ -2,6 +2,21 @@
 
 Cloudflare Pages hosts the site and automatically deploys the Pages Functions in the `functions/` folder.
 
+## Current Pages Project
+
+The current project is already created and deployed:
+
+```text
+Project name: daily-content
+Production URL: https://daily-content.pages.dev
+```
+
+The latest local deployment command used:
+
+```powershell
+npx.cmd wrangler pages deploy dist --project-name daily-content --branch main
+```
+
 ## Create The Pages Project
 
 Option A: Cloudflare dashboard Git integration.
@@ -30,9 +45,9 @@ The repo includes `.github/workflows/deploy-pages.yml`. It deploys with Wrangler
 
 For that workflow, add these GitHub secrets:
 
-- `CLOUDFLARE_ACCOUNT_ID`
 - `CLOUDFLARE_API_TOKEN`
-- `CLOUDFLARE_PAGES_PROJECT_NAME`
+
+`CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_PAGES_PROJECT_NAME` are already wired into the workflow.
 
 ## Pages Functions
 
@@ -58,7 +73,12 @@ The Pages project needs these bindings:
 - D1 binding named `DB`.
 - R2 binding named `IMAGES`.
 
-The included `wrangler.jsonc` already defines the binding names. Replace `REPLACE_WITH_D1_DATABASE_ID` after creating the database.
+The included `wrangler.jsonc` already defines the binding names and real resource IDs:
+
+```text
+DB -> db
+IMAGES -> images
+```
 
 ## Cloudflare Secrets
 
@@ -70,6 +90,13 @@ wrangler pages secret put SUBSCRIBE_PASSWORD --project-name YOUR_PAGES_PROJECT_N
 wrangler pages secret put ADMIN_PASSWORD --project-name YOUR_PAGES_PROJECT_NAME
 wrangler pages secret put VAPID_PUBLIC_KEY --project-name YOUR_PAGES_PROJECT_NAME
 ```
+
+Current status for `daily-content`:
+
+- `VIEWER_PASSWORD`: set.
+- `SUBSCRIBE_PASSWORD`: set.
+- `ADMIN_PASSWORD`: set.
+- `VAPID_PUBLIC_KEY`: set.
 
 Optional admin manual generation button:
 
@@ -84,4 +111,3 @@ wrangler pages secret put GITHUB_DISPATCH_TOKEN --project-name YOUR_PAGES_PROJEC
 The Worker API tracks dynamic API requests in D1. If usage gets close to the planned free-tier cap, public endpoints can require `VIEWER_PASSWORD`.
 
 The admin page can turn public lock on or off.
-

@@ -30,7 +30,9 @@ GitHub Actions avoids that problem while keeping the website, database, bucket, 
 
 ## Main URLs
 
-After deployment:
+Production deployment:
+
+- Site: https://daily-content.pages.dev
 
 - `/`: today
 - `/archive`: previous items
@@ -38,7 +40,24 @@ After deployment:
 - `/subscribe`: notification subscription
 - `/admin`: admin dashboard
 
+## Current Status
+
+Completed:
+
+- GitHub repository initialized and pushed.
+- Cloudflare Pages project created as `daily-content`.
+- D1 database created as `db`.
+- R2 bucket created as `images`.
+- D1 migration applied.
+- Cloudflare Pages secrets set for admin, viewer, subscriber, and VAPID public key.
+- Site deployed and responding.
+- Admin API verified with `ADMIN_PASSWORD`.
+
+Pending before the first generated item appears:
+
+- Confirm remaining GitHub Actions secrets.
+- Run the `Daily content generation` workflow once.
+
 ## Secrets Are Not Committed
 
 All API keys and passwords must be stored in Cloudflare secrets or GitHub Actions secrets. The repo only contains placeholders and setup instructions.
-

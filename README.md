@@ -30,6 +30,24 @@ Start with these docs:
 8. [Android notifications](docs/07-android-notifications.md)
 9. [Admin and limits](docs/08-admin-and-limits.md)
 10. [Deployment checklist](docs/09-deploy-checklist.md)
+11. [Testing the system](docs/10-testing.md)
+
+## Current Deployment Status
+
+- Production site: https://daily-content.pages.dev
+- Cloudflare Pages project: `daily-content`
+- D1 database: `db`
+- R2 bucket: `images`
+- D1 migration: applied.
+- Cloudflare Pages secrets: admin, viewer, subscriber, and VAPID public key are set.
+- GitHub Actions generation: ready to test after the remaining GitHub Actions secrets are present.
+
+Current expected state before first generation:
+
+- `/` loads the app.
+- `/api/config` returns the VAPID public config.
+- `/api/admin/summary` works with admin password.
+- `/api/today` returns `404` until the first daily item is generated.
 
 ## Useful Commands
 
@@ -43,4 +61,3 @@ npm run vapid:generate
 ```
 
 On Windows PowerShell, if `npm` is blocked by execution policy, use `npm.cmd` instead.
-
