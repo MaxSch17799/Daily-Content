@@ -47,8 +47,12 @@ Add:
 - `CLOUDFLARE_API_TOKEN`
 - `R2_ACCESS_KEY_ID`
 - `R2_SECRET_ACCESS_KEY`
-- `VAPID_PRIVATE_KEY`
+- `VAPID_PRIVATE_KEY`. Done.
 - `VAPID_CONTACT_EMAIL`
+
+Optional stored secret:
+
+- `CLOUDFLARE__R2_API_TOKEN_VALUE`. Done, saved for possible future use but not used by the current workflow.
 
 Already wired into workflow files:
 

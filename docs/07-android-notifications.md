@@ -38,6 +38,8 @@ Set:
 
 Only the public key is exposed to the browser.
 
+`VAPID_PRIVATE_KEY` has already been added to GitHub Actions secrets. Keep the actual value out of committed docs and code.
+
 Current public key already generated and configured:
 
 ```text

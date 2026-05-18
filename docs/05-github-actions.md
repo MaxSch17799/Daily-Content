@@ -63,6 +63,21 @@ Required:
 
 `VAPID_PRIVATE_KEY` and `VAPID_CONTACT_EMAIL` are only needed for sending notifications. Generation still works without them, but subscribed devices will not receive pushes.
 
+## Current Secret Status
+
+These GitHub Actions secrets have been added:
+
+- `OPENAI_API_KEY`
+- `VAPID_PRIVATE_KEY`
+- `CLOUDFLARE__R2_API_TOKEN_VALUE`
+
+`CLOUDFLARE__R2_API_TOKEN_VALUE` is saved for possible future use, but the current image upload code does not use it. The generator uploads to R2 through Cloudflare's S3-compatible API, so the secrets it actually needs for image upload are:
+
+- `R2_ACCESS_KEY_ID`
+- `R2_SECRET_ACCESS_KEY`
+
+Do not commit actual secret values to this repository. GitHub Actions should store the values.
+
 ## Add GitHub Secrets Step By Step
 
 Open:
@@ -131,6 +146,15 @@ Name: R2_SECRET_ACCESS_KEY
 Value: the R2 Secret Access Key
 ```
 
+Optional token you already stored for future reference:
+
+```text
+Name: CLOUDFLARE__R2_API_TOKEN_VALUE
+Value: the R2 API token value
+```
+
+This optional token is not currently read by `.github/workflows/daily-generate.yml`.
+
 ### 4. VAPID Private Key
 
 The VAPID public key is already configured. The private key is needed so GitHub Actions can send browser push notifications.
@@ -141,6 +165,8 @@ Use the generated private key from local setup:
 Name: VAPID_PRIVATE_KEY
 Value: the generated VAPID private key
 ```
+
+This one has already been added in GitHub.
 
 ### 5. VAPID Contact Email
 
