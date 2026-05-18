@@ -16,6 +16,7 @@ jobs:
       D1_DATABASE_ID: c57001e6-7d81-420f-b8b1-1f4266cb4e74
       R2_BUCKET_NAME: images
       PUBLIC_SITE_URL: https://daily-content.pages.dev
+      VAPID_PUBLIC_KEY: BKMUeuRpsIpT_aheckXaIoZIpTeJI6JgatsJInVgLnJE1M1K8q9nSBc0ynWbM9MmH409a1GWPYl-_xk5g825bqU
       CAN_GENERATE: ${{ secrets.OPENAI_API_KEY != '' && secrets.CLOUDFLARE_API_TOKEN != '' && secrets.R2_ACCESS_KEY_ID != '' && secrets.R2_SECRET_ACCESS_KEY != '' }}
     steps:
       - name: Skip until secrets are configured
@@ -49,7 +50,7 @@ jobs:
           R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
           PUBLIC_SITE_URL: ${{ env.PUBLIC_SITE_URL }}
-          VAPID_PUBLIC_KEY: ${{ secrets.VAPID_PUBLIC_KEY }}
+          VAPID_PUBLIC_KEY: ${{ env.VAPID_PUBLIC_KEY }}
           VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
           VAPID_CONTACT_EMAIL: ${{ secrets.VAPID_CONTACT_EMAIL }}
           APP_TIMEZONE: Europe/Berlin

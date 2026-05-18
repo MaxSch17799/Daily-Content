@@ -41,6 +41,7 @@ D1_DATABASE_ID=c57001e6-7d81-420f-b8b1-1f4266cb4e74
 R2_BUCKET_NAME=images
 PUBLIC_SITE_URL=https://daily-content.pages.dev
 CLOUDFLARE_PAGES_PROJECT_NAME=daily-content
+VAPID_PUBLIC_KEY=BKMUeuRpsIpT_aheckXaIoZIpTeJI6JgatsJInVgLnJE1M1K8q9nSBc0ynWbM9MmH409a1GWPYl-_xk5g825bqU
 ```
 
 ## Required GitHub Secrets
@@ -57,9 +58,10 @@ Required:
 - `CLOUDFLARE_API_TOKEN`
 - `R2_ACCESS_KEY_ID`
 - `R2_SECRET_ACCESS_KEY`
-- `VAPID_PUBLIC_KEY`
 - `VAPID_PRIVATE_KEY`
 - `VAPID_CONTACT_EMAIL`
+
+`VAPID_PRIVATE_KEY` and `VAPID_CONTACT_EMAIL` are only needed for sending notifications. Generation still works without them, but subscribed devices will not receive pushes.
 
 ## Cloudflare API Token Permissions
 

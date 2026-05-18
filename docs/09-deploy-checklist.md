@@ -47,7 +47,6 @@ Add:
 - `CLOUDFLARE_API_TOKEN`
 - `R2_ACCESS_KEY_ID`
 - `R2_SECRET_ACCESS_KEY`
-- `VAPID_PUBLIC_KEY`
 - `VAPID_PRIVATE_KEY`
 - `VAPID_CONTACT_EMAIL`
 
@@ -58,6 +57,7 @@ Already wired into workflow files:
 - `R2_BUCKET_NAME = images`
 - `PUBLIC_SITE_URL = https://daily-content.pages.dev`
 - `CLOUDFLARE_PAGES_PROJECT_NAME = daily-content`
+- `VAPID_PUBLIC_KEY = BKMUeuRpsIpT_aheckXaIoZIpTeJI6JgatsJInVgLnJE1M1K8q9nSBc0ynWbM9MmH409a1GWPYl-_xk5g825bqU`
 
 ## First Run
 

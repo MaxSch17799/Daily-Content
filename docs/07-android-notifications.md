@@ -33,11 +33,16 @@ You will get:
 Set:
 
 - `VAPID_PUBLIC_KEY` in Cloudflare Pages secrets.
-- `VAPID_PUBLIC_KEY` in GitHub Actions secrets.
 - `VAPID_PRIVATE_KEY` in GitHub Actions secrets.
 - `VAPID_CONTACT_EMAIL` in GitHub Actions secrets.
 
 Only the public key is exposed to the browser.
+
+Current public key already generated and configured:
+
+```text
+VAPID_PUBLIC_KEY=BKMUeuRpsIpT_aheckXaIoZIpTeJI6JgatsJInVgLnJE1M1K8q9nSBc0ynWbM9MmH409a1GWPYl-_xk5g825bqU
+```
 
 ## Subscription Flow
 
@@ -65,4 +70,3 @@ MAX_PUSH_SUBSCRIPTIONS=25
 ```
 
 This is set in `wrangler.jsonc` and can be changed later.
-
