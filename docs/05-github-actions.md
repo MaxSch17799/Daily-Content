@@ -31,6 +31,16 @@ You can also run it manually from GitHub:
 3. Choose `Daily content generation`.
 4. Click `Run workflow`.
 
+## Values Already Wired Into The Workflow
+
+These values are not treated as secrets and are already in the workflow:
+
+```text
+CLOUDFLARE_ACCOUNT_ID=f564988478746167a2d9fabbad78a203
+D1_DATABASE_ID=c57001e6-7d81-420f-b8b1-1f4266cb4e74
+R2_BUCKET_NAME=images
+```
+
 ## Required GitHub Secrets
 
 Add these under:
@@ -42,16 +52,17 @@ GitHub repo -> Settings -> Secrets and variables -> Actions -> New repository se
 Required:
 
 - `OPENAI_API_KEY`
-- `CLOUDFLARE_ACCOUNT_ID`
 - `CLOUDFLARE_API_TOKEN`
-- `D1_DATABASE_ID`
-- `R2_BUCKET_NAME`
 - `R2_ACCESS_KEY_ID`
 - `R2_SECRET_ACCESS_KEY`
 - `PUBLIC_SITE_URL`
 - `VAPID_PUBLIC_KEY`
 - `VAPID_PRIVATE_KEY`
 - `VAPID_CONTACT_EMAIL`
+
+Also required for the deploy workflow:
+
+- `CLOUDFLARE_PAGES_PROJECT_NAME`
 
 ## Cloudflare API Token Permissions
 
@@ -79,4 +90,3 @@ FORCE_GENERATE=true
 ```
 
 That can be added temporarily to the workflow environment or used locally.
-
