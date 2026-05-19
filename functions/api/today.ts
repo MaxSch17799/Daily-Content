@@ -1,6 +1,6 @@
 import type { FunctionContext } from "../_lib/context";
 import type { Env, ItemRow } from "../_lib/types";
-import { cacheHeaders, errorResponse, jsonResponse } from "../_lib/response";
+import { errorResponse, jsonResponse, noStoreHeaders } from "../_lib/response";
 import { guardPublicRoute } from "../_lib/usage";
 import { itemToApi } from "../_lib/items";
 
@@ -15,7 +15,7 @@ export const onRequestGet = async ({ env, request }: FunctionContext) => {
             image_prompt, image_r2_key, uniqueness_key, tags_json, created_at
      FROM items
      WHERE published = 1
-     ORDER BY date DESC, created_at DESC
+     ORDER BY created_at DESC
      LIMIT 1`
   ).first<ItemRow>();
 
@@ -23,5 +23,5 @@ export const onRequestGet = async ({ env, request }: FunctionContext) => {
     return errorResponse(404, "no_item", "No daily item has been generated yet.");
   }
 
-  return jsonResponse({ item: itemToApi(row) }, { headers: cacheHeaders(60) });
+  return jsonResponse({ item: itemToApi(row) }, { headers: noStoreHeaders() });
 };

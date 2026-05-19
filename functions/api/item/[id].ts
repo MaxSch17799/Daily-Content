@@ -1,6 +1,6 @@
 import type { FunctionContext } from "../../_lib/context";
 import type { Env, ItemRow } from "../../_lib/types";
-import { cacheHeaders, errorResponse, jsonResponse } from "../../_lib/response";
+import { errorResponse, jsonResponse, noStoreHeaders } from "../../_lib/response";
 import { guardPublicRoute } from "../../_lib/usage";
 import { itemToApi } from "../../_lib/items";
 
@@ -25,5 +25,5 @@ export const onRequestGet = async ({ env, request, params }: FunctionContext<{ i
     return errorResponse(404, "not_found", "Item not found.");
   }
 
-  return jsonResponse({ item: itemToApi(row) }, { headers: cacheHeaders(60) });
+  return jsonResponse({ item: itemToApi(row) }, { headers: noStoreHeaders() });
 };

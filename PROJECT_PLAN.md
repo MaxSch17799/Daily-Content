@@ -282,7 +282,7 @@ Important design point: counting every visit can itself create database writes. 
 MVP guardrails:
 
 - Public homepage is static Pages HTML/CSS/JS.
-- `/api/today` returns today's item with strong cache headers.
+- `/api/today`, `/api/archive`, and `/api/item/:id` return fresh JSON with no-store headers, so the newest generated content appears immediately.
 - `/api/archive` is paginated with a hard page size cap, such as 20 items/page and 50 max.
 - `/api/item/:id` returns one item only.
 - Admin endpoints always require an admin password/session.

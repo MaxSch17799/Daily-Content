@@ -221,15 +221,10 @@ If that is annoying at first, use a broader account token for testing, then narr
 
 The app supports multiple generated items per day.
 
-Manual runs:
+Every successful generator run:
 
-- Default to generating another item, even if today already has one.
+- Generates another item, even if today already has one.
 - Save each item with a unique `id`, `created_at` timestamp, and timestamped R2 image key.
 - Show the newest item on the homepage.
 
-Scheduled runs:
-
-- Use `SKIP_IF_EXISTS_TODAY=true` to avoid accidental duplicate scheduled runs on the same date.
-- Tomorrow's scheduled run should create the next daily item.
-
-The manual GitHub workflow includes an optional `skip_if_exists_today` input if you intentionally want a manual run to behave like the scheduled run.
+There is no same-day duplicate skip. Old skipped rows can remain in admin logs from older versions, but new runs should either succeed or fail with an actionable error.

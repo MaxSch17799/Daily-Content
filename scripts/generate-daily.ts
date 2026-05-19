@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { CloudflareD1Client } from "./lib/cloudflare-d1";
-import { boolEnv, optionalEnv, requiredEnv } from "./lib/env";
+import { optionalEnv, requiredEnv } from "./lib/env";
 import { loadModeConfig } from "./lib/modes";
 import { generateImage, generateTextContent } from "./lib/openai";
 import { sendPushNotifications } from "./lib/push";
@@ -25,7 +25,6 @@ async function main() {
   const siteUrl = requiredEnv("PUBLIC_SITE_URL").replace(/\/$/, "");
   const timeZone = optionalEnv("APP_TIMEZONE", "Europe/Berlin");
   const language = optionalEnv("DEFAULT_LANGUAGE", "en");
-  const skipIfExistsToday = boolEnv("SKIP_IF_EXISTS_TODAY", false);
   const today = localDate(timeZone);
 
   const d1 = new CloudflareD1Client(accountId, databaseId, cloudflareToken);
@@ -39,15 +38,6 @@ async function main() {
   );
 
   try {
-    if (skipIfExistsToday) {
-      const existing = await d1.first<{ id: string }>("SELECT id FROM items WHERE date = ? LIMIT 1", [today]);
-      if (existing) {
-        await finishRun(d1, runId, "skipped", `Item already exists for ${today}: ${existing.id}`);
-        console.log(`Item already exists for ${today}. SKIP_IF_EXISTS_TODAY=true prevented another item.`);
-        return;
-      }
-    }
-
     const activeMode =
       (await d1.first<SettingRow>("SELECT value FROM settings WHERE key = 'active_mode'"))?.value ||
       optionalEnv("DEFAULT_MODE", "fictional_satire_news");

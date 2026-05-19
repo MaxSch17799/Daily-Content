@@ -1,6 +1,6 @@
 import type { FunctionContext } from "../_lib/context";
 import type { Env, ItemRow } from "../_lib/types";
-import { cacheHeaders, jsonResponse } from "../_lib/response";
+import { jsonResponse, noStoreHeaders } from "../_lib/response";
 import { guardPublicRoute } from "../_lib/usage";
 import { itemToApi } from "../_lib/items";
 
@@ -19,7 +19,7 @@ export const onRequestGet = async ({ env, request }: FunctionContext) => {
             image_prompt, image_r2_key, uniqueness_key, tags_json, created_at
      FROM items
      WHERE published = 1
-     ORDER BY date DESC, created_at DESC
+     ORDER BY created_at DESC
      LIMIT ? OFFSET ?`
   )
     .bind(limit, offset)
@@ -32,7 +32,7 @@ export const onRequestGet = async ({ env, request }: FunctionContext) => {
       offset,
       nextOffset: (result.results ?? []).length === limit ? offset + limit : null
     },
-    { headers: cacheHeaders(60) }
+    { headers: noStoreHeaders() }
   );
 };
 

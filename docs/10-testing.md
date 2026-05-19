@@ -72,7 +72,7 @@ Expected result:
 - The workflow logs a successful `generation_runs` row.
 - If there are push subscribers, it sends notifications.
 
-Manual workflow runs can create multiple same-day items. The homepage shows the newest item by `created_at`; the archive keeps the older items.
+Manual and scheduled workflow runs can create multiple same-day items. The homepage shows the newest item by `created_at`; the archive keeps the older items.
 
 ### 4. Verify Today's Item
 
