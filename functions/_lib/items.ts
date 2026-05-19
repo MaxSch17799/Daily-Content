@@ -13,6 +13,7 @@ export function itemToApi(row: ItemRow) {
     imagePrompt: row.image_prompt,
     imageUrl: `/api/image/${encodeURIComponent(row.image_r2_key)}`,
     uniquenessKey: row.uniqueness_key,
+    published: row.published === 1,
     tags: safeTags(row.tags_json),
     createdAt: row.created_at
   };
@@ -26,4 +27,3 @@ function safeTags(value: string): string[] {
     return [];
   }
 }
-

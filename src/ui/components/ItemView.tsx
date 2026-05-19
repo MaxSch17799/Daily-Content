@@ -2,12 +2,46 @@ import { Calendar, Tag } from "lucide-react";
 import type { DailyItem } from "../../api";
 
 export function ItemView({ item, compact = false }: { item: DailyItem; compact?: boolean }) {
+  if (!compact) {
+    return (
+      <article className="daily-article">
+        <header className="daily-header">
+          <div className="meta-line">
+            <span>
+              <Calendar size={16} aria-hidden />
+              {formatTimestamp(item.createdAt)}
+            </span>
+            <span>{formatMode(item.mode)}</span>
+          </div>
+          <h1>{item.title}</h1>
+        </header>
+        <div className="daily-body">
+          <div className="daily-image-wrap">
+            <img src={item.imageUrl} alt="" loading="eager" />
+          </div>
+          <div className="daily-copy">
+            <p className="lede">{item.notificationText}</p>
+            <div className="full-text">{splitParagraphs(item.fullText).map((line) => <p key={line}>{line}</p>)}</div>
+            <div className="tag-list" aria-label="Tags">
+              {item.tags.map((tag) => (
+                <span key={tag}>
+                  <Tag size={14} aria-hidden />
+                  {tag}
+                </span>
+              ))}
+            </div>
+          </div>
+        </div>
+      </article>
+    );
+  }
+
   return (
-    <article className={compact ? "item-row" : "daily-layout"}>
-      <div className={compact ? "item-row-image" : "daily-image-wrap"}>
-        <img src={item.imageUrl} alt="" loading={compact ? "lazy" : "eager"} />
+    <article className="item-row">
+      <div className="item-row-image">
+        <img src={item.imageUrl} alt="" loading="lazy" />
       </div>
-      <div className={compact ? "item-row-copy" : "daily-copy"}>
+      <div className="item-row-copy">
         <div className="meta-line">
           <span>
             <Calendar size={16} aria-hidden />
@@ -16,8 +50,7 @@ export function ItemView({ item, compact = false }: { item: DailyItem; compact?:
           <span>{formatMode(item.mode)}</span>
         </div>
         <h1>{item.title}</h1>
-        <p className="lede">{compact ? item.summary : item.notificationText}</p>
-        {!compact && <div className="full-text">{splitParagraphs(item.fullText).map((line) => <p key={line}>{line}</p>)}</div>}
+        <p className="lede">{item.summary}</p>
         <div className="tag-list" aria-label="Tags">
           {item.tags.map((tag) => (
             <span key={tag}>

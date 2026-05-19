@@ -51,15 +51,24 @@ Current migrations:
 - `0001_initial.sql`: creates the app tables and baseline modes.
 - `0002_allow_multiple_items_per_day.sql`: removes the unique-per-date item constraint.
 - `0003_add_absurd_tech_breakthrough_mode.sql`: adds the absurd technology breakthrough mode.
+- `0004_editable_modes.sql`: adds the editable-mode index and safely seeds current YAML mode templates without overwriting existing D1 rows.
 
 ## Sync Mode Configs
 
-The editable mode files live in `modes/en/*.yaml`.
+The live editable modes are stored in D1.
 
-After changing mode files, sync them to D1:
+The YAML files in `modes/en/*.yaml` are template files. They are useful for future agents, import/export, and recovery, but the daily generator now reads the active mode from D1 first.
+
+To seed missing YAML modes into D1 without overwriting admin edits:
 
 ```bash
 npm run modes:sync
+```
+
+To force YAML files to overwrite matching D1 modes:
+
+```bash
+OVERWRITE_MODES=1 npm run modes:sync
 ```
 
 This command needs these local environment variables:
@@ -71,7 +80,7 @@ This command needs these local environment variables:
 ## Important Tables
 
 - `items`: generated content.
-- `modes`: mode metadata.
+- `modes`: live mode configs used by the generator.
 - `settings`: active mode, public lock, timezone.
 - `push_subscriptions`: Android Chrome Web Push subscriptions.
 - `generation_runs`: daily generator log.

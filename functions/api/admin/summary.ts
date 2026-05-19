@@ -16,7 +16,7 @@ export const onRequestGet = async ({ env, request }: FunctionContext) => {
     env.DB.prepare("SELECT * FROM modes ORDER BY label").all<ModeRow>(),
     env.DB.prepare(
       `SELECT id, date, mode, language, title, notification_text, summary, full_text,
-              image_prompt, image_r2_key, uniqueness_key, tags_json, created_at
+              image_prompt, image_r2_key, uniqueness_key, published, tags_json, created_at
        FROM items
        ORDER BY created_at DESC
        LIMIT 30`

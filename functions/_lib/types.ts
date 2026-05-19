@@ -27,6 +27,7 @@ export interface ItemRow {
   image_prompt: string;
   image_r2_key: string;
   uniqueness_key: string;
+  published: number;
   tags_json: string;
   created_at: string;
 }
@@ -72,4 +73,3 @@ export interface GenerationRunRow {
   input_tokens: number;
   output_tokens: number;
 }
-

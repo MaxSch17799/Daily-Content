@@ -22,6 +22,8 @@ The daily generator:
 
 The default mode is `fictional_satire_news`.
 
+D1 is the live source of truth for modes. The YAML files in `modes/en/*.yaml` are kept as templates that future edits or agents can import/export, but the generator reads the active mode from D1 first.
+
 Available modes:
 
 - `interesting_fact`
@@ -64,6 +66,7 @@ Completed:
 - First item generated for `2026-05-19`.
 - Generated image route verified.
 - Multiple items per day are supported and ordered by `created_at`.
+- Admin can create/edit modes in D1, import mode YAML, export mode YAML, and hide generated items from the public archive.
 
 Pending improvements:
 

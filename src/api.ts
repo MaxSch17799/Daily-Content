@@ -10,6 +10,7 @@ export interface DailyItem {
   imagePrompt: string;
   imageUrl: string;
   uniquenessKey: string;
+  published: boolean;
   tags: string[];
   createdAt: string;
 }
@@ -25,6 +26,18 @@ export interface Mode {
   image_style: string;
   enabled: number;
   updated_at: string;
+}
+
+export interface ModeSaveInput {
+  id: string;
+  label: string;
+  language: string;
+  text_model: string;
+  image_model: string;
+  image_quality: string;
+  instructions: string;
+  image_style: string;
+  enabled: boolean;
 }
 
 export interface UsageCounter {
@@ -129,6 +142,26 @@ export async function dispatchGeneration(adminPassword: string): Promise<void> {
   await apiFetch("/api/admin/dispatch-generation", {
     method: "POST",
     headers: { "x-admin-password": adminPassword }
+  });
+}
+
+export async function updateItemVisibility(
+  adminPassword: string,
+  itemId: string,
+  published: boolean
+): Promise<void> {
+  await apiFetch("/api/admin/item-visibility", {
+    method: "POST",
+    headers: { "x-admin-password": adminPassword },
+    body: JSON.stringify({ itemId, published })
+  });
+}
+
+export async function saveAdminMode(adminPassword: string, mode: ModeSaveInput): Promise<void> {
+  await apiFetch("/api/admin/mode", {
+    method: "POST",
+    headers: { "x-admin-password": adminPassword },
+    body: JSON.stringify(mode)
   });
 }
 

@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { CloudflareD1Client } from "./lib/cloudflare-d1";
 import { optionalEnv, requiredEnv } from "./lib/env";
-import { loadModeConfig } from "./lib/modes";
+import { loadModeConfig, ModeConfig, ModeConfigSchema } from "./lib/modes";
 import { generateImage, generateTextContent } from "./lib/openai";
 import { sendPushNotifications } from "./lib/push";
 import { createR2Client, uploadPngToR2 } from "./lib/r2";
@@ -14,6 +14,18 @@ interface SettingRow {
 interface RecentItemRow {
   title: string;
   uniqueness_key: string;
+}
+
+interface ModeRow {
+  id: string;
+  label: string;
+  language: string;
+  text_model: string;
+  image_model: string;
+  image_quality: string;
+  instructions: string;
+  image_style: string;
+  enabled: number;
 }
 
 async function main() {
@@ -44,7 +56,7 @@ async function main() {
     const activeLanguage =
       (await d1.first<SettingRow>("SELECT value FROM settings WHERE key = 'active_language'"))?.value || language;
 
-    const mode = await loadModeConfig(activeMode, activeLanguage);
+    const mode = await loadModeFromD1(d1, activeMode, activeLanguage);
     await d1.query("UPDATE generation_runs SET mode = ? WHERE id = ?", [mode.id, runId]);
 
     const recent = await d1.query<RecentItemRow>(
@@ -158,6 +170,35 @@ async function finishRun(d1: CloudflareD1Client, runId: string, status: string, 
     new Date().toISOString(),
     runId
   ]);
+}
+
+async function loadModeFromD1(d1: CloudflareD1Client, modeId: string, language: string): Promise<ModeConfig> {
+  const row = await d1.first<ModeRow>(
+    `SELECT id, label, language, text_model, image_model, image_quality, instructions, image_style, enabled
+     FROM modes
+     WHERE id = ?
+     LIMIT 1`,
+    [modeId]
+  );
+
+  if (!row) {
+    return loadModeConfig(modeId, language);
+  }
+
+  if (row.enabled !== 1) {
+    throw new Error(`Active mode ${modeId} is disabled in D1.`);
+  }
+
+  return ModeConfigSchema.parse({
+    id: row.id,
+    label: row.label,
+    language: row.language,
+    text_model: row.text_model,
+    image_model: row.image_model,
+    image_quality: row.image_quality,
+    instructions: row.instructions,
+    image_style: row.image_style
+  });
 }
 
 main().catch((error) => {

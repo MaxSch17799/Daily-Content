@@ -21,10 +21,20 @@ The first version supports:
 - View active mode.
 - Change active mode.
 - Turn public lock on/off.
-- See recent generated items.
+- See recent generated items with thumbnails.
+- Hide or show generated items in the public archive.
+- Create and edit D1-backed modes.
+- Import YAML mode files into the editor.
+- Export the current mode as YAML.
 - See usage counters.
 - See generation runs.
 - Try to dispatch the GitHub generation workflow if optional GitHub dispatch is configured.
+
+## Mode Editor
+
+The admin mode editor writes to the D1 `modes` table. The generator reads the active mode from D1 first, so changes made here affect the next generation run without changing files in GitHub.
+
+The YAML files in `modes/en/*.yaml` remain as templates. Use the admin import button to load a YAML file into the editor, then save it to store it in D1. Use the export button to download the current editor values in the same YAML shape.
 
 ## Set Admin Password
 

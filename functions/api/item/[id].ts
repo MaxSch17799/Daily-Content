@@ -13,7 +13,7 @@ export const onRequestGet = async ({ env, request, params }: FunctionContext<{ i
   const id = String(params.id ?? "");
   const row = await env.DB.prepare(
     `SELECT id, date, mode, language, title, notification_text, summary, full_text,
-            image_prompt, image_r2_key, uniqueness_key, tags_json, created_at
+            image_prompt, image_r2_key, uniqueness_key, published, tags_json, created_at
      FROM items
      WHERE id = ? AND published = 1
      LIMIT 1`

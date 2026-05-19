@@ -15,6 +15,7 @@ These checks have already passed:
 - Cloudflare Pages secrets have been set for admin, viewer, subscriber, and VAPID public key.
 - The first manual GitHub Actions generation run succeeded.
 - Multiple items per day are supported after migration `0002_allow_multiple_items_per_day.sql`.
+- Editable D1-backed modes are supported after migration `0004_editable_modes.sql`.
 
 Before the first generated item existed, this returned `404`:
 
@@ -54,7 +55,18 @@ Expected result:
 - Admin dashboard loads.
 - Active mode is `fictional_satire_news`.
 - The mode picker includes `Absurd Tech Breakthrough`.
+- The mode editor can load an existing mode.
 - Usage counters and generation runs are visible.
+
+### 2a. Test The Mode Editor
+
+Open `/admin`, choose an existing mode in the mode editor, and press `Export YAML`.
+
+Expected result:
+
+- A YAML file is produced with `id`, `label`, `language`, `text_model`, `image_model`, `image_quality`, `image_style`, and `instructions`.
+
+To test import, use the import button with a YAML file in the same format, confirm the fields populate, then save the mode.
 
 ### 3. Run The Generator
 
