@@ -1,16 +1,27 @@
 import { z } from "zod";
 import type { ModeConfig } from "./modes";
 
+const CONTENT_LIMITS = {
+  title: 120,
+  notificationText: 220,
+  summary: 420,
+  fullText: 2000,
+  imagePrompt: 1200,
+  uniquenessKey: 120,
+  tag: 32,
+  tags: 6
+} as const;
+
 export const DailyContentSchema = z.object({
   mode: z.string().min(1),
   language: z.string().min(2),
-  title: z.string().min(3).max(120),
-  notification_text: z.string().min(8).max(220),
-  summary: z.string().min(20).max(420),
-  full_text: z.string().min(80).max(2000),
-  image_prompt: z.string().min(40).max(1200),
-  uniqueness_key: z.string().min(3).max(120),
-  tags: z.array(z.string().min(1).max(32)).min(1).max(6)
+  title: z.string().min(3).max(CONTENT_LIMITS.title),
+  notification_text: z.string().min(8).max(CONTENT_LIMITS.notificationText),
+  summary: z.string().min(20).max(CONTENT_LIMITS.summary),
+  full_text: z.string().min(80).max(CONTENT_LIMITS.fullText),
+  image_prompt: z.string().min(40).max(CONTENT_LIMITS.imagePrompt),
+  uniqueness_key: z.string().min(3).max(CONTENT_LIMITS.uniquenessKey),
+  tags: z.array(z.string().min(1).max(CONTENT_LIMITS.tag)).min(1).max(CONTENT_LIMITS.tags)
 });
 
 export type DailyContent = z.infer<typeof DailyContentSchema>;
@@ -111,7 +122,7 @@ export async function generateTextContent({
   }
 
   const outputText = extractOutputText(body);
-  const parsed = DailyContentSchema.parse(JSON.parse(outputText));
+  const parsed = DailyContentSchema.parse(normalizeDailyContent(JSON.parse(outputText)));
   return {
     content: parsed,
     usage: (body.usage as OpenAIUsage | undefined) ?? {}
@@ -184,13 +195,71 @@ function buildUserPrompt(mode: ModeConfig, recentItems: Array<{ title: string; u
     recent,
     "",
     "Output requirements:",
-    "- The notification_text must fit in a phone notification.",
-    "- The summary must work on the homepage.",
-    "- The full_text should be complete but concise.",
-    "- The image_prompt should describe a compelling image and must not request readable text.",
+    `- The title must be ${CONTENT_LIMITS.title} characters or fewer.`,
+    `- The notification_text must be ${CONTENT_LIMITS.notificationText} characters or fewer and fit in a phone notification.`,
+    `- The summary must be ${CONTENT_LIMITS.summary} characters or fewer and work on the homepage.`,
+    `- The full_text must be ${CONTENT_LIMITS.fullText} characters or fewer but still complete.`,
+    `- The image_prompt must be ${CONTENT_LIMITS.imagePrompt} characters or fewer, describe a compelling image, and must not request readable text.`,
+    `- The uniqueness_key must be ${CONTENT_LIMITS.uniquenessKey} characters or fewer.`,
+    `- Use 1-${CONTENT_LIMITS.tags} tags, each ${CONTENT_LIMITS.tag} characters or fewer.`,
     `- Image style to include in image_prompt: ${mode.image_style}`,
     "- For fictional satire, explicitly keep it fictional and avoid real-current-event confusion."
   ].join("\n");
+}
+
+function normalizeDailyContent(value: unknown): unknown {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return value;
+  }
+
+  const record = { ...(value as Record<string, unknown>) };
+  record.title = truncateOneLine(record.title, CONTENT_LIMITS.title);
+  record.notification_text = truncateOneLine(record.notification_text, CONTENT_LIMITS.notificationText);
+  record.summary = truncateOneLine(record.summary, CONTENT_LIMITS.summary);
+  record.full_text = truncateMultiline(record.full_text, CONTENT_LIMITS.fullText);
+  record.image_prompt = truncateOneLine(record.image_prompt, CONTENT_LIMITS.imagePrompt);
+  record.uniqueness_key = truncateOneLine(record.uniqueness_key, CONTENT_LIMITS.uniquenessKey);
+  record.tags = normalizeTags(record.tags);
+  return record;
+}
+
+function normalizeTags(value: unknown): unknown {
+  if (!Array.isArray(value)) {
+    return value;
+  }
+
+  return value
+    .filter((tag): tag is string => typeof tag === "string")
+    .map((tag) => truncateOneLine(tag, CONTENT_LIMITS.tag))
+    .filter(Boolean)
+    .slice(0, CONTENT_LIMITS.tags);
+}
+
+function truncateOneLine(value: unknown, maxLength: number): unknown {
+  if (typeof value !== "string") {
+    return value;
+  }
+  return truncateAtWord(value.replace(/\s+/g, " ").trim(), maxLength);
+}
+
+function truncateMultiline(value: unknown, maxLength: number): unknown {
+  if (typeof value !== "string") {
+    return value;
+  }
+  return truncateAtWord(value.replace(/\r\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim(), maxLength);
+}
+
+function truncateAtWord(value: string, maxLength: number): string {
+  if (value.length <= maxLength) {
+    return value;
+  }
+
+  const suffix = "...";
+  const limit = maxLength - suffix.length;
+  const sliced = value.slice(0, limit);
+  const lastSpace = sliced.lastIndexOf(" ");
+  const base = lastSpace > Math.floor(limit * 0.6) ? sliced.slice(0, lastSpace) : sliced;
+  return `${base.trimEnd()}${suffix}`;
 }
 
 function extractOutputText(body: Record<string, unknown>): string {
@@ -227,4 +296,3 @@ function extractOutputText(body: Record<string, unknown>): string {
 
   throw new Error(`Could not extract OpenAI output text: ${JSON.stringify(body)}`);
 }
-
