@@ -2,7 +2,8 @@ import { z } from "zod";
 import type { ModeConfig } from "./modes";
 
 const CONTENT_LIMITS = {
-  title: 120,
+  preferredTitle: 120,
+  title: 220,
   notificationText: 220,
   summary: 420,
   fullText: 2000,
@@ -195,7 +196,7 @@ function buildUserPrompt(mode: ModeConfig, recentItems: Array<{ title: string; u
     recent,
     "",
     "Output requirements:",
-    `- The title must be ${CONTENT_LIMITS.title} characters or fewer.`,
+    `- The title should be ${CONTENT_LIMITS.preferredTitle} characters or fewer.`,
     `- The notification_text must be ${CONTENT_LIMITS.notificationText} characters or fewer and fit in a phone notification.`,
     `- The summary must be ${CONTENT_LIMITS.summary} characters or fewer and work on the homepage.`,
     `- The full_text must be ${CONTENT_LIMITS.fullText} characters or fewer but still complete.`,
