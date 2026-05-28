@@ -23,6 +23,7 @@
     "MAX_PUSH_SUBSCRIPTIONS": "25",
     "GITHUB_OWNER": "MaxSch17799",
     "GITHUB_REPO": "Daily-Content",
-    "GITHUB_WORKFLOW_ID": "daily-generate.yml"
+    "GITHUB_WORKFLOW_ID": "daily-generate.yml",
+    "GITHUB_TRADES_WORKFLOW_ID": "trade-advice.yml"
   }
 }

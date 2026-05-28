@@ -9,9 +9,11 @@ export interface Env {
   PUBLIC_SOFT_DYNAMIC_REQUESTS?: string;
   PUBLIC_HARD_DYNAMIC_REQUESTS?: string;
   MAX_PUSH_SUBSCRIPTIONS?: string;
+  TRADES_PASSWORD?: string;
   GITHUB_OWNER?: string;
   GITHUB_REPO?: string;
   GITHUB_WORKFLOW_ID?: string;
+  GITHUB_TRADES_WORKFLOW_ID?: string;
   GITHUB_DISPATCH_TOKEN?: string;
 }
 

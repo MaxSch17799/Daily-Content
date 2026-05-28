@@ -1,0 +1,63 @@
+name: Trade advice
+
+on:
+  workflow_dispatch:
+    inputs:
+      force:
+        description: Force a run outside the normal schedule
+        required: false
+        default: "true"
+      portfolio_id:
+        description: Portfolio id
+        required: false
+        default: "max"
+  schedule:
+    - cron: "0 5 * * 1-5"
+    - cron: "0 6 * * 1-5"
+
+jobs:
+  generate-trade-advice:
+    runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_ACCOUNT_ID: f564988478746167a2d9fabbad78a203
+      D1_DATABASE_ID: c57001e6-7d81-420f-b8b1-1f4266cb4e74
+      PUBLIC_SITE_URL: https://daily-content.pages.dev
+      VAPID_PUBLIC_KEY: BKMUeuRpsIpT_aheckXaIoZIpTeJI6JgatsJInVgLnJE1M1K8q9nSBc0ynWbM9MmH409a1GWPYl-_xk5g825bqU
+      CAN_GENERATE: ${{ secrets.OPENAI_API_KEY != '' && secrets.CLOUDFLARE_API_TOKEN != '' }}
+    steps:
+      - name: Skip until secrets are configured
+        if: env.CAN_GENERATE != 'true'
+        run: echo "Trade advice skipped because OPENAI_API_KEY or CLOUDFLARE_API_TOKEN is not configured yet."
+
+      - name: Checkout
+        if: env.CAN_GENERATE == 'true'
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        if: env.CAN_GENERATE == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        if: env.CAN_GENERATE == 'true'
+        run: npm ci
+
+      - name: Generate trade advice
+        if: env.CAN_GENERATE == 'true'
+        run: npm run generate:trades
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ env.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          D1_DATABASE_ID: ${{ env.D1_DATABASE_ID }}
+          PUBLIC_SITE_URL: ${{ env.PUBLIC_SITE_URL }}
+          VAPID_PUBLIC_KEY: ${{ env.VAPID_PUBLIC_KEY }}
+          VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
+          VAPID_CONTACT_EMAIL: ${{ secrets.VAPID_CONTACT_EMAIL }}
+          TWELVE_DATA_API_KEY: ${{ secrets.TWELVE_DATA_API_KEY }}
+          EODHD_API_KEY: ${{ secrets.EODHD_API_KEY }}
+          COINGECKO_API_KEY: ${{ secrets.COINGECKO_API_KEY }}
+          TRADES_DEFAULT_PORTFOLIO_ID: ${{ github.event.inputs.portfolio_id || 'max' }}
+          FORCE_GENERATE: ${{ github.event.inputs.force || 'false' }}

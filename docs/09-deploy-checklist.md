@@ -35,20 +35,25 @@ npm.cmd run build
    - `VIEWER_PASSWORD`. Done.
    - `SUBSCRIBE_PASSWORD`. Done.
    - `ADMIN_PASSWORD`. Done.
+   - `TRADES_PASSWORD`. Done, set to `MAX` for the first trading MVP.
    - `VAPID_PUBLIC_KEY`. Done.
-7. Run D1 migrations. Done.
-8. Deploy Pages. Done.
+7. Run D1 migrations. Done through `0005_trades.sql`.
+8. Deploy Pages. Done for the existing app. Trade UI/API deployment requires pushing or deploying the current repo changes.
 
 ## GitHub Secrets
 
 Add:
 
-- `OPENAI_API_KEY`
-- `CLOUDFLARE_API_TOKEN`
+- `OPENAI_API_KEY`. Present by inference: the latest daily workflow did not skip and completed generation.
+- `CLOUDFLARE_API_TOKEN`. Present by inference: the latest daily/deploy workflows did not skip and completed successfully.
 - `R2_ACCESS_KEY_ID`
 - `R2_SECRET_ACCESS_KEY`
 - `VAPID_PRIVATE_KEY`. Done.
 - `VAPID_CONTACT_EMAIL`
+- Optional for trading quote fallbacks:
+  - `COINGECKO_API_KEY`
+  - `EODHD_API_KEY`
+  - `TWELVE_DATA_API_KEY`
 
 Optional stored secret:
 

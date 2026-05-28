@@ -1,4 +1,4 @@
-import { Archive, Bell, CalendarDays, Gauge, Newspaper } from "lucide-react";
+import { Archive, Bell, Briefcase, CalendarDays, Gauge, Newspaper } from "lucide-react";
 import { useEffect, useState } from "react";
 import { parseRoute, Route, navigate } from "../router";
 import { AdminPage } from "./pages/AdminPage";
@@ -6,6 +6,7 @@ import { ArchivePage } from "./pages/ArchivePage";
 import { ItemPage } from "./pages/ItemPage";
 import { SubscribePage } from "./pages/SubscribePage";
 import { TodayPage } from "./pages/TodayPage";
+import { TradesPage } from "./pages/TradesPage";
 import { ViewerPasswordDialog } from "./components/ViewerPasswordDialog";
 
 export function App() {
@@ -29,6 +30,7 @@ export function App() {
           <NavButton icon={<CalendarDays size={18} />} label="Today" active={route.name === "today"} path="/" />
           <NavButton icon={<Archive size={18} />} label="Archive" active={route.name === "archive"} path="/archive" />
           <NavButton icon={<Bell size={18} />} label="Subscribe" active={route.name === "subscribe"} path="/subscribe" />
+          <NavButton icon={<Briefcase size={18} />} label="Trades" active={route.name === "trades"} path="/trades" />
           <NavButton icon={<Gauge size={18} />} label="Admin" active={route.name === "admin"} path="/admin" />
         </nav>
       </header>
@@ -39,6 +41,7 @@ export function App() {
         {route.name === "item" && <ItemPage id={route.id} onViewerPasswordRequired={() => setViewerPasswordRequired(true)} />}
         {route.name === "subscribe" && <SubscribePage />}
         {route.name === "admin" && <AdminPage />}
+        {route.name === "trades" && <TradesPage section={route.section} />}
       </main>
 
       {viewerPasswordRequired && (
@@ -72,4 +75,3 @@ function NavButton({
     </button>
   );
 }
-

@@ -590,6 +590,149 @@ th {
   white-space: nowrap;
 }
 
+.trades-page {
+  display: grid;
+  gap: 18px;
+}
+
+.trades-heading {
+  align-items: flex-start;
+}
+
+.trades-heading p {
+  margin: 8px 0 0;
+  color: #4b5563;
+}
+
+.trades-heading-actions,
+.trades-tabs,
+.button-row,
+.panel-heading-row,
+.inline-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.trades-tabs {
+  padding: 8px;
+  border: 1px solid rgba(31, 41, 55, 0.14);
+  border-radius: 8px;
+  background: rgba(255, 250, 240, 0.74);
+}
+
+.trades-stack {
+  display: grid;
+  gap: 16px;
+}
+
+.trades-panel,
+.recommendation-card {
+  border: 1px solid rgba(31, 41, 55, 0.14);
+  border-radius: 8px;
+  background: rgba(255, 250, 240, 0.84);
+}
+
+.trades-panel {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+}
+
+.trades-panel h2,
+.recommendation-card h3 {
+  margin: 0;
+}
+
+.trades-panel p,
+.recommendation-card p {
+  margin: 0;
+  color: #4b5563;
+  line-height: 1.5;
+}
+
+.settings-grid {
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.settings-grid label,
+.trades-panel label {
+  display: grid;
+  gap: 6px;
+  color: #374151;
+  font-weight: 700;
+}
+
+.recommendation-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px;
+}
+
+.recommendation-card {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+}
+
+.recommendation-card small {
+  display: block;
+  margin-top: 4px;
+  color: #6b7280;
+  font-weight: 500;
+}
+
+.recommendation-card dl {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+}
+
+.recommendation-card dt {
+  color: #6b7280;
+  font-size: 0.78rem;
+}
+
+.recommendation-card dd {
+  margin: 2px 0 0;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.trade-action {
+  justify-self: start;
+  padding: 4px 7px;
+  border-radius: 999px;
+  background: #e5e7eb;
+  color: #1f2937;
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.trade-action.buy {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.trade-action.sell {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.json-preview {
+  max-height: 360px;
+  overflow: auto;
+  padding: 12px;
+  border: 1px solid rgba(31, 41, 55, 0.14);
+  border-radius: 8px;
+  background: #111827;
+  color: #f9fafb;
+  font-size: 0.82rem;
+}
+
 .modal-backdrop {
   position: fixed;
   inset: 0;

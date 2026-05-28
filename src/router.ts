@@ -3,6 +3,7 @@ export type Route =
   | { name: "archive" }
   | { name: "subscribe" }
   | { name: "admin" }
+  | { name: "trades"; section?: string }
   | { name: "item"; id: string };
 
 export function parseRoute(pathname = window.location.pathname): Route {
@@ -16,6 +17,9 @@ export function parseRoute(pathname = window.location.pathname): Route {
   if (parts[0] === "admin") {
     return { name: "admin" };
   }
+  if (parts[0] === "trades") {
+    return { name: "trades", section: parts[1] || "dashboard" };
+  }
   if (parts[0] === "item" && parts[1]) {
     return { name: "item", id: decodeURIComponent(parts[1]) };
   }
@@ -26,4 +30,3 @@ export function navigate(path: string): void {
   window.history.pushState({}, "", path);
   window.dispatchEvent(new PopStateEvent("popstate"));
 }
-

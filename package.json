@@ -12,6 +12,7 @@
     "db:migrate:local": "wrangler d1 migrations apply db --local",
     "db:migrate:remote": "wrangler d1 migrations apply db --remote",
     "generate:daily": "tsx scripts/generate-daily.ts",
+    "generate:trades": "tsx scripts/generate-trade-advice.ts",
     "modes:sync": "tsx scripts/sync-modes.ts",
     "vapid:generate": "web-push generate-vapid-keys --json"
   },
