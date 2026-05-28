@@ -34,10 +34,12 @@ export const onRequestPost = async ({ env, request }: FunctionContext) => {
   const warnings: string[] = [];
 
   for (const line of lines) {
-    if (/^cash\s*:/i.test(line)) {
-      cash = parseMoney(line) ?? cash;
+    const cashValue = parseCashLine(line);
+    if (cashValue !== null) {
+      cash = cashValue;
       continue;
     }
+
     const holding = parseHoldingLine(line);
     if (holding) {
       holdings.push(holding);
@@ -57,8 +59,10 @@ function parseHoldingLine(line: string): ParsedHolding | null {
   const name = prefixMatch ? prefixMatch[2].trim() : first.trim();
   const symbol = findSymbol(parts, name);
   const isin = parts.find((part) => /^[A-Z]{2}[A-Z0-9]{9}[0-9]$/i.test(part)) || "";
-  const quantity = parseQuantity(line);
-  const currentValue = parseMoney(line);
+  const looseNumbers = extractNumbers(line);
+  const parsedQuantity = parseQuantity(line);
+  const quantity = Number.isFinite(parsedQuantity) ? parsedQuantity : looseNumbers.length >= 2 ? looseNumbers[0] : Number.NaN;
+  const currentValue = parseMoney(line) ?? (looseNumbers.length >= 2 ? looseNumbers[1] : null);
   const warnings: string[] = [];
 
   if (!symbol) {
@@ -91,7 +95,17 @@ function parseHoldingLine(line: string): ParsedHolding | null {
 }
 
 function findSymbol(parts: string[], name: string): string {
-  const symbol = parts.find((part) => /^[A-Z0-9.-]{1,12}$/i.test(part) && part.toLowerCase() !== name.toLowerCase());
+  const blocked = new Set(["stock", "stocks", "etf", "etfs", "crypto", "shares", "share", "value", "eur", "cash", "kash"]);
+  const candidates = parts.flatMap((part) => part.split(/\s+/));
+  const symbol = candidates.find((part) => {
+    const token = part.replace(/[,;:]$/g, "");
+    return (
+      /^[A-Z0-9.-]{1,12}$/i.test(token) &&
+      token.toLowerCase() !== name.toLowerCase() &&
+      !blocked.has(token.toLowerCase()) &&
+      !/^[0-9]+(?:[.,][0-9]+)?$/.test(token)
+    );
+  });
   return symbol || "";
 }
 
@@ -100,7 +114,30 @@ function parseQuantity(line: string): number {
   return match ? Number(match[1].replace(",", ".")) : Number.NaN;
 }
 
+function parseCashLine(line: string): number | null {
+  if (!/^(cash|kash|cash reserve|available cash)\b/i.test(line)) {
+    return null;
+  }
+  return parseMoney(line) ?? extractNumbers(line)[0] ?? 0;
+}
+
 function parseMoney(line: string): number | null {
-  const match = line.match(/(?:value|cash|wert|amount)?\s*:?\s*([0-9]+(?:[.,][0-9]+)?)\s*(?:eur|€)\b/i);
-  return match ? Number(match[1].replace(",", ".")) : null;
+  const patterns = [
+    /(?:value|cash|kash|wert|amount)?\s*:?\s*([0-9]+(?:[.,][0-9]+)?)\s*(?:eur|\u20ac)\b/i,
+    /(?:value|cash|kash|wert|amount)?\s*:?\s*(?:eur|\u20ac)\s*([0-9]+(?:[.,][0-9]+)?)/i,
+    /(?:value|wert|amount)\s*:?\s*([0-9]+(?:[.,][0-9]+)?)/i
+  ];
+
+  for (const pattern of patterns) {
+    const match = line.match(pattern);
+    if (match) {
+      return Number(match[1].replace(",", "."));
+    }
+  }
+
+  return null;
+}
+
+function extractNumbers(line: string): number[] {
+  return Array.from(line.matchAll(/\b([0-9]+(?:[.,][0-9]+)?)\b/g)).map((match) => Number(match[1].replace(",", ".")));
 }
