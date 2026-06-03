@@ -70,7 +70,7 @@ export async function generateTradeAdvice({
         schema: tradeAdviceJsonSchema
       }
     },
-    max_output_tokens: 2200
+    max_output_tokens: 3600
   });
   const text = extractOutputText(raw);
   return {

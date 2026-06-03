@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { CloudflareD1Client } from "./lib/cloudflare-d1";
 import { boolEnv, optionalEnv, requiredEnv } from "./lib/env";
 import { localDate } from "./lib/time";
-import { logAiCall } from "./lib/trades/audit";
+import { finishAiCall, logAiCall, startAiCall } from "./lib/trades/audit";
 import { buildAdvicePrompt, buildNewsPrompt } from "./lib/trades/prompt";
 import { generateNewsContext, generateTradeAdvice } from "./lib/trades/openai";
 import { refreshQuotes } from "./lib/trades/quotes";
@@ -51,6 +51,7 @@ async function main() {
   const openaiApiKey = requiredEnv("OPENAI_API_KEY");
   const siteUrl = optionalEnv("PUBLIC_SITE_URL", "https://daily-content.pages.dev");
   const portfolioId = optionalEnv("TRADES_DEFAULT_PORTFOLIO_ID", "max");
+  const requestedRunId = optionalEnv("TRADES_RUN_ID", "").trim();
   const force = boolEnv("FORCE_GENERATE", false) || process.argv.includes("--force");
   const model = optionalEnv("TRADES_TEXT_MODEL", "gpt-5.4-mini");
   const d1 = new CloudflareD1Client(accountId, databaseId, cloudflareToken);
@@ -70,20 +71,44 @@ async function main() {
   }
 
   const runDate = localDate(settings.timezone || "Europe/Berlin");
-  const runId = randomUUID();
+  const runId = requestedRunId || randomUUID();
   const startedAt = new Date().toISOString();
-  await d1.query(
-    `INSERT INTO trade_advice_runs (id, portfolio_id, run_date, run_type, status, started_at, model)
-     VALUES (?, ?, ?, ?, 'running', ?, ?)`,
-    [runId, portfolioId, runDate, force ? "manual" : "scheduled", startedAt, model]
-  );
+  const existingRun = requestedRunId
+    ? await d1.first<{ id: string }>("SELECT id FROM trade_advice_runs WHERE id = ? AND portfolio_id = ?", [requestedRunId, portfolioId])
+    : null;
+  if (existingRun) {
+    await d1.query(
+      `UPDATE trade_advice_runs
+       SET status = 'running', started_at = ?, model = ?, message = 'Starting trade advice generator.'
+       WHERE id = ?`,
+      [startedAt, model, runId]
+    );
+  } else {
+    await d1.query(
+      `INSERT INTO trade_advice_runs (id, portfolio_id, run_date, run_type, status, started_at, model, message)
+       VALUES (?, ?, ?, ?, 'running', ?, ?, 'Starting trade advice generator.')`,
+      [runId, portfolioId, runDate, force ? "manual" : "scheduled", startedAt, model]
+    );
+  }
+
+  let newsLogId = "";
+  let adviceLogId = "";
+  let newsLogRunning = false;
+  let adviceLogRunning = false;
+
+  async function setRunProgress(message: string) {
+    console.log(message);
+    await d1.query("UPDATE trade_advice_runs SET message = ? WHERE id = ?", [message, runId]);
+  }
 
   try {
+    await setRunProgress("Loading portfolio, cash balances, and current positions.");
     const positions = (
       await d1.query<PositionRow>("SELECT * FROM trade_positions WHERE portfolio_id = ? ORDER BY asset_type, symbol", [portfolioId])
     ).results;
     const cash = (await d1.query<CashRow>("SELECT currency, amount FROM trade_cash_balances WHERE portfolio_id = ?", [portfolioId]))
       .results;
+    await setRunProgress("Refreshing quote data for the current portfolio.");
     const quotes = await refreshQuotes({ d1, portfolioId, positions });
     const snapshot = buildSnapshot({ positions, cash, quotes });
     const snapshotId = randomUUID();
@@ -104,26 +129,37 @@ async function main() {
       ]
     );
 
+    await setRunProgress("Preparing web/news context prompt.");
     const newsPrompt = buildNewsPrompt({ date: runDate, positions, searchMode: settings.web_search_mode });
+    newsLogId = await startAiCall({
+      d1,
+      portfolioId,
+      adviceRunId: runId,
+      callType: "web_context",
+      model,
+      promptText: newsPrompt,
+      input: { settings, positions: positions.map((position) => position.symbol) }
+    });
+    newsLogRunning = true;
+    await setRunProgress(
+      settings.web_search_mode === "none" ? "Skipping web search and building local context." : "Waiting for OpenAI web/news context."
+    );
     const news = await generateNewsContext({
       apiKey: openaiApiKey,
       model,
       prompt: newsPrompt,
       searchMode: settings.web_search_mode
     });
-    await logAiCall({
+    await finishAiCall({
       d1,
+      aiLogId: newsLogId,
       portfolioId,
-      adviceRunId: runId,
-      callType: "web_context",
-      model,
       status: "success",
-      promptText: newsPrompt,
-      input: { settings, positions: positions.map((position) => position.symbol) },
       rawResponse: news.raw,
       parsedOutput: news.parsed,
       usage: news.usage
     });
+    newsLogRunning = false;
 
     const newsContextId = randomUUID();
     await d1.query(
@@ -144,6 +180,7 @@ async function main() {
       ]
     );
 
+    await setRunProgress("Loading previous advice and unavailable asset history.");
     const previousAdvice = await d1.query(
       `SELECT id, run_date, summary, output_json
        FROM trade_advice_runs
@@ -155,6 +192,7 @@ async function main() {
     const unavailable = await d1.query("SELECT asset_type, symbol, name, reason FROM trade_unavailable_assets WHERE portfolio_id = ?", [
       portfolioId
     ]);
+    await setRunProgress("Building structured trade recommendation prompt.");
     const advicePrompt = buildAdvicePrompt({
       settings,
       snapshot,
@@ -164,30 +202,40 @@ async function main() {
       promptText: settings.prompt_text
     });
 
-    const advice = await generateTradeAdvice({ apiKey: openaiApiKey, model, prompt: advicePrompt });
-    await logAiCall({
+    adviceLogId = await startAiCall({
       d1,
       portfolioId,
       adviceRunId: runId,
       callType: "advice_json",
       model,
-      status: "success",
       promptText: advicePrompt,
-      input: { snapshot, settings },
+      input: { snapshot, settings }
+    });
+    adviceLogRunning = true;
+    await setRunProgress("Waiting for OpenAI structured buy/sell recommendation JSON.");
+    const advice = await generateTradeAdvice({ apiKey: openaiApiKey, model, prompt: advicePrompt });
+    await finishAiCall({
+      d1,
+      aiLogId: adviceLogId,
+      portfolioId,
+      status: "success",
       rawResponse: advice.raw,
       parsedOutput: advice.parsed,
       usage: advice.usage
     });
+    adviceLogRunning = false;
 
+    await setRunProgress("Saving structured recommendations to the portfolio database.");
     for (const recommendation of advice.parsed.recommendations) {
       await d1.query(
         `INSERT INTO trade_recommendations (
            id, advice_run_id, portfolio_id, action, asset_type, symbol, name, isin,
            trade_republic_availability, suggested_quantity, suggested_price, price_currency,
            suggested_gross_amount, suggested_fee, suggested_cash_effect, reason, risk,
-           confidence, status, created_at, updated_at
+           confidence, status, client_recommendation_id, user_display_title, cash_math,
+           sources_json, created_at, updated_at
          )
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?)`,
         [
           randomUUID(),
           runId,
@@ -201,12 +249,16 @@ async function main() {
           recommendation.quantity ?? null,
           recommendation.estimated_price ?? null,
           recommendation.price_currency || "EUR",
-          recommendation.estimated_gross_amount ?? null,
-          recommendation.estimated_fee ?? 1,
-          recommendation.estimated_cash_effect ?? null,
+          recommendation.estimated_gross_amount,
+          recommendation.estimated_fee,
+          recommendation.estimated_cash_effect,
           recommendation.reason,
           recommendation.risk || null,
           recommendation.confidence,
+          recommendation.client_recommendation_id,
+          recommendation.user_display_title,
+          recommendation.cash_math,
+          JSON.stringify(recommendation.sources),
           new Date().toISOString(),
           new Date().toISOString()
         ]
@@ -225,6 +277,7 @@ async function main() {
            input_tokens = ?,
            output_tokens = ?,
            web_search_calls = ?,
+           message = 'Advice is ready.',
            finished_at = ?
        WHERE id = ?`,
       [
@@ -242,6 +295,7 @@ async function main() {
       ]
     );
 
+    await setRunProgress("Sending push notification that advice is ready.");
     await sendTradePush({
       d1,
       portfolioId,
@@ -250,10 +304,33 @@ async function main() {
       contactEmail: optionalEnv("VAPID_CONTACT_EMAIL", "you@example.com"),
       siteUrl
     });
+    await d1.query("UPDATE trade_advice_runs SET message = 'Advice is ready.' WHERE id = ?", [runId]);
 
     console.log(`Trade advice generated: ${runId}`);
   } catch (error) {
     const message = error instanceof Error ? error.stack || error.message : String(error);
+    if (newsLogId && newsLogRunning) {
+      await finishAiCall({
+        d1,
+        aiLogId: newsLogId,
+        portfolioId,
+        status: "failed",
+        rawResponse: {},
+        parsedOutput: {},
+        validationError: message.slice(0, 4000)
+      });
+    }
+    if (adviceLogId && adviceLogRunning) {
+      await finishAiCall({
+        d1,
+        aiLogId: adviceLogId,
+        portfolioId,
+        status: "failed",
+        rawResponse: {},
+        parsedOutput: {},
+        validationError: message.slice(0, 4000)
+      });
+    }
     await d1.query("UPDATE trade_advice_runs SET status = 'failed', message = ?, finished_at = ? WHERE id = ?", [
       message.slice(0, 1000),
       new Date().toISOString(),

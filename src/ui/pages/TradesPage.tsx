@@ -1,7 +1,8 @@
-import { Bell, Briefcase, Download, LogOut, Play, RefreshCw, Save, Search, Settings, Upload } from "lucide-react";
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { Briefcase, ChevronDown, ChevronUp, Download, LogOut, Play, RefreshCw, Save, Search, Upload } from "lucide-react";
+import { FormEvent, useEffect, useState } from "react";
 import {
   AdviceRun,
+  AdviceProgressLog,
   AuditLogListItem,
   ParsedHolding,
   TradePosition,
@@ -12,6 +13,7 @@ import {
   confirmTradeAdvice,
   fetchAuditLogs,
   fetchTradeAdvice,
+  fetchTradeAdviceProgress,
   fetchTradeTransactions,
   fetchTradesPortfolio,
   fetchTradesSession,
@@ -193,8 +195,9 @@ export function TradesPage({ section = "dashboard" }: TradesPageProps) {
         <TradesAdvice
           advice={advice}
           onRun={async () => {
-            await runTradeAdviceNow();
-            setMessage("Trade advice workflow dispatched.");
+            const result = await runTradeAdviceNow();
+            setMessage(result.alreadyRunning ? "Trade advice is already running." : "Trade advice workflow dispatched.");
+            return result;
           }}
           onSaved={async () => {
             setMessage("Actual trades saved.");
@@ -387,23 +390,75 @@ function TradesAdvice({
   onError
 }: {
   advice: { run: AdviceRun | null; recommendations: TradeRecommendation[] };
-  onRun: () => Promise<void>;
+  onRun: () => Promise<{ runId: string; status: string; alreadyRunning: boolean }>;
   onSaved: () => Promise<void>;
   onError: (message: string) => void;
 }) {
   const [confirming, setConfirming] = useState(false);
   const [drafts, setDrafts] = useState(() => advice.recommendations.map(recommendationToDraft));
+  const [running, setRunning] = useState(advice.run?.status === "queued" || advice.run?.status === "running");
+  const [progressRunId, setProgressRunId] = useState(advice.run?.status === "queued" || advice.run?.status === "running" ? advice.run.id : "");
+  const [progress, setProgress] = useState<{
+    run: AdviceRun | null;
+    logs: AdviceProgressLog[];
+    recommendations: TradeRecommendation[];
+  }>({ run: null, logs: [], recommendations: [] });
+  const [detailsOpen, setDetailsOpen] = useState(false);
 
   useEffect(() => {
     setDrafts(advice.recommendations.map(recommendationToDraft));
   }, [advice.recommendations]);
 
+  useEffect(() => {
+    if (progress.recommendations.length > 0) {
+      setDrafts(progress.recommendations.map(recommendationToDraft));
+    }
+  }, [progress.recommendations]);
+
+  useEffect(() => {
+    const activeRunId = advice.run && ["queued", "running"].includes(advice.run.status) ? advice.run.id : "";
+    if (activeRunId && !progressRunId) {
+      setProgressRunId(activeRunId);
+      setRunning(true);
+    }
+  }, [advice.run, progressRunId]);
+
+  useEffect(() => {
+    if (!progressRunId || !running) {
+      return;
+    }
+    let cancelled = false;
+    async function poll() {
+      try {
+        const result = await fetchTradeAdviceProgress(progressRunId);
+        if (cancelled) {
+          return;
+        }
+        setProgress(result);
+        if (result.run && ["success", "failed"].includes(result.run.status)) {
+          setRunning(false);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          onError(err instanceof Error ? err.message : "Could not load advice progress.");
+        }
+      }
+    }
+    void poll();
+    const timer = window.setInterval(() => void poll(), 3000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [onError, progressRunId, running]);
+
   async function saveConfirmations() {
-    if (!advice.run) {
+    const runForConfirm = progress.run || advice.run;
+    if (!runForConfirm) {
       return;
     }
     try {
-      await confirmTradeAdvice(advice.run.id, drafts);
+      await confirmTradeAdvice(runForConfirm.id, drafts);
       setConfirming(false);
       await onSaved();
     } catch (err) {
@@ -411,26 +466,87 @@ function TradesAdvice({
     }
   }
 
+  async function runNow() {
+    setRunning(true);
+    setDetailsOpen(true);
+    setProgress({
+      run: {
+        id: "pending-dispatch",
+        run_date: "",
+        status: "queued",
+        summary: null,
+        benchmark_json: "{}",
+        output_json: "{}",
+        started_at: new Date().toISOString(),
+        finished_at: null,
+        message: "Dispatching GitHub workflow."
+      },
+      logs: [],
+      recommendations: []
+    });
+    try {
+      const result = await onRun();
+      setProgressRunId(result.runId);
+      setProgress((current) => ({
+        ...current,
+        run: {
+          ...(current.run || {
+            run_date: "",
+            summary: null,
+            benchmark_json: "{}",
+            output_json: "{}",
+            started_at: new Date().toISOString(),
+            finished_at: null
+          }),
+          id: result.runId,
+          status: result.status,
+          message: result.alreadyRunning ? "Existing advice run is already in progress." : "Workflow queued. Waiting for GitHub Actions."
+        } as AdviceRun
+      }));
+    } catch (err) {
+      setRunning(false);
+      onError(err instanceof Error ? err.message : "Could not start advice generation.");
+    }
+  }
+
+  const visibleRun = progress.run || advice.run;
+  const visibleRecommendations = progress.recommendations.length > 0 ? progress.recommendations : advice.recommendations;
+  const steps = buildAdviceSteps(visibleRun, progress.logs, visibleRecommendations);
+  const completedSteps = steps.filter((step) => step.state === "done").length;
+  const progressPercent = Math.round((completedSteps / steps.length) * 100);
+
   return (
     <div className="trades-stack">
       <section className="trades-panel">
         <div className="panel-heading-row">
           <h2>Advice</h2>
-          <button className="primary-button" type="button" onClick={() => void onRun()}>
+          <button className="primary-button" type="button" onClick={() => void runNow()} disabled={running}>
             <Play size={16} aria-hidden />
-            Run advice now
+            {running ? "Generating advice..." : "Run advice now"}
           </button>
         </div>
-        {!advice.run && <p>No advice has been generated yet.</p>}
-        {advice.run && (
+        {(running || visibleRun?.status === "queued" || visibleRun?.status === "running") && (
+          <AdviceProgressPanel
+            run={visibleRun}
+            logs={progress.logs}
+            steps={steps}
+            progressPercent={progressPercent}
+            detailsOpen={detailsOpen}
+            onToggleDetails={() => setDetailsOpen((current) => !current)}
+          />
+        )}
+        {!visibleRun && <p>No advice has been generated yet.</p>}
+        {visibleRun?.status === "failed" && <ErrorPanel message={visibleRun.message || "Advice generation failed."} />}
+        {visibleRun && visibleRun.status !== "queued" && visibleRun.status !== "running" && (
           <>
-            <p>{advice.run.summary || "Advice generated."}</p>
+            <p>{visibleRun.summary || "Advice generated."}</p>
+            <RunOutputSummary run={visibleRun} />
             <div className="recommendation-grid">
-              {advice.recommendations.map((rec) => (
+              {visibleRecommendations.map((rec) => (
                 <article className="recommendation-card" key={rec.id}>
                   <span className={`trade-action ${rec.action}`}>{rec.action}</span>
                   <h3>
-                    {rec.symbol} <small>{rec.name}</small>
+                    {rec.user_display_title || rec.symbol} <small>{rec.name}</small>
                   </h3>
                   <p>{rec.reason}</p>
                   <dl>
@@ -446,7 +562,12 @@ function TradesAdvice({
                       <dt>Availability</dt>
                       <dd>{rec.trade_republic_availability}</dd>
                     </div>
+                    <div>
+                      <dt>Cash math</dt>
+                      <dd>{rec.cash_math || "-"}</dd>
+                    </div>
                   </dl>
+                  <RecommendationSources recommendation={rec} />
                 </article>
               ))}
             </div>
@@ -456,7 +577,7 @@ function TradesAdvice({
           </>
         )}
       </section>
-      {confirming && advice.run && (
+      {confirming && visibleRun && (
         <section className="trades-panel">
           <h2>Confirm actual trades</h2>
           <div className="table-wrap">
@@ -483,7 +604,7 @@ function TradesAdvice({
                         <option value="unavailable">Unavailable</option>
                       </select>
                     </td>
-                    <td>{advice.recommendations[index]?.symbol}</td>
+                    <td>{visibleRecommendations[index]?.symbol}</td>
                     <td>
                       <input
                         type="number"
@@ -524,6 +645,168 @@ function TradesAdvice({
   function updateDraft(index: number, key: keyof ReturnType<typeof recommendationToDraft>, value: unknown) {
     setDrafts((current) => current.map((draft, currentIndex) => (currentIndex === index ? { ...draft, [key]: value } : draft)));
   }
+}
+
+function AdviceProgressPanel({
+  run,
+  logs,
+  steps,
+  progressPercent,
+  detailsOpen,
+  onToggleDetails
+}: {
+  run: AdviceRun | null;
+  logs: AdviceProgressLog[];
+  steps: Array<{ label: string; description: string; state: "done" | "active" | "pending" }>;
+  progressPercent: number;
+  detailsOpen: boolean;
+  onToggleDetails: () => void;
+}) {
+  return (
+    <div className="advice-progress">
+      <div className="progress-bar" aria-label="Advice generation progress">
+        <span style={{ width: `${progressPercent}%` }} />
+      </div>
+      <div className="progress-steps">
+        {steps.map((step) => (
+          <div className={`progress-step ${step.state}`} key={step.label}>
+            <strong>{step.label}</strong>
+            <span>{step.description}</span>
+          </div>
+        ))}
+      </div>
+      <div className="progress-current">
+        <strong>Waiting on</strong>
+        <span>{run?.message || "Waiting for the next generator update."}</span>
+      </div>
+      <button className="secondary-button" type="button" onClick={onToggleDetails}>
+        {detailsOpen ? <ChevronUp size={16} aria-hidden /> : <ChevronDown size={16} aria-hidden />}
+        {detailsOpen ? "Hide AI details" : "Show AI details"}
+      </button>
+      {detailsOpen && (
+        <div className="ai-live-details">
+          {logs.length === 0 && <p>The AI prompt will appear here as soon as the generator starts the OpenAI call.</p>}
+          {logs.map((log) => (
+            <article className="ai-log-card" key={log.id}>
+              <div className="panel-heading-row">
+                <h3>{log.call_type}</h3>
+                <span className={`trade-action ${log.status}`}>{log.status}</span>
+              </div>
+              <label>
+                Prompt sent
+                <textarea rows={8} readOnly value={log.prompt_text || ""} />
+              </label>
+              <label>
+                Response received
+                <textarea rows={8} readOnly value={formatJsonText(log.parsed_output_json || log.raw_response_json)} />
+              </label>
+              {log.validation_error && <ErrorPanel message={log.validation_error} />}
+            </article>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RunOutputSummary({ run }: { run: AdviceRun }) {
+  const output = parseJsonObject(run.output_json);
+  const executionOrder = Array.isArray(output.execution_order) ? output.execution_order : [];
+  const cashAfterPlan = typeof output.cash_after_plan === "number" ? output.cash_after_plan : null;
+  const cashReason = typeof output.cash_position_reason === "string" ? output.cash_position_reason : "";
+  const benchmark = output.benchmark && typeof output.benchmark === "object" ? (output.benchmark as Record<string, unknown>) : null;
+  return (
+    <div className="advice-summary-grid">
+      <Metric label="Cash after plan" value={cashAfterPlan === null ? "-" : formatMoney(cashAfterPlan)} />
+      <Metric label="Fees" value={typeof output.estimated_total_fees === "number" ? formatMoney(output.estimated_total_fees) : "-"} />
+      {cashReason && (
+        <div className="summary-note">
+          <strong>Cash reserve</strong>
+          <span>{cashReason}</span>
+        </div>
+      )}
+      {benchmark && (
+        <div className="summary-note">
+          <strong>Benchmark</strong>
+          <span>{String(benchmark.comparison_summary || "No benchmark summary.")}</span>
+        </div>
+      )}
+      {executionOrder.length > 0 && (
+        <div className="summary-note wide">
+          <strong>Execution order</strong>
+          <span>{executionOrder.join(" -> ")}</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RecommendationSources({ recommendation }: { recommendation: TradeRecommendation }) {
+  const sources = parseJsonArray(recommendation.sources_json);
+  if (sources.length === 0) {
+    return null;
+  }
+  return (
+    <div className="source-list">
+      <strong>Sources</strong>
+      {sources.slice(0, 3).map((source, index) => {
+        const item = source && typeof source === "object" ? (source as Record<string, unknown>) : {};
+        const url = String(item.url || "");
+        return (
+          <a key={`${url}-${index}`} href={url || undefined} target="_blank" rel="noreferrer">
+            {String(item.title || url || "Source")}
+          </a>
+        );
+      })}
+    </div>
+  );
+}
+
+function buildAdviceSteps(
+  run: AdviceRun | null,
+  logs: AdviceProgressLog[],
+  recommendations: TradeRecommendation[]
+): Array<{ label: string; description: string; state: "done" | "active" | "pending" }> {
+  const status = run?.status || "pending";
+  const hasWebPrompt = logs.some((log) => log.call_type === "web_context");
+  const webDone = logs.some((log) => log.call_type === "web_context" && log.status === "success");
+  const hasAdvicePrompt = logs.some((log) => log.call_type === "advice_json");
+  const adviceDone = logs.some((log) => log.call_type === "advice_json" && log.status === "success");
+  const done = status === "success";
+  const failed = status === "failed";
+
+  return [
+    {
+      label: "Dispatch",
+      description: "Queue the GitHub Actions workflow and create a D1 run.",
+      state: run ? "done" : "active"
+    },
+    {
+      label: "Portfolio",
+      description: "Load cash, positions, and quote data.",
+      state: hasWebPrompt || hasAdvicePrompt || done ? "done" : run ? "active" : "pending"
+    },
+    {
+      label: "News",
+      description: "Ask OpenAI for current market context using the configured web-search mode.",
+      state: webDone ? "done" : hasWebPrompt ? "active" : "pending"
+    },
+    {
+      label: "Prompt",
+      description: "Build the structured recommendation prompt with settings, cash, history, and unavailable assets.",
+      state: hasAdvicePrompt ? "done" : webDone ? "active" : "pending"
+    },
+    {
+      label: "Advice JSON",
+      description: "Wait for strict buy/sell/hold JSON with quantities, cash math, reasons, and sources.",
+      state: adviceDone ? "done" : hasAdvicePrompt ? "active" : "pending"
+    },
+    {
+      label: "Save",
+      description: "Save recommendations and notify the phone.",
+      state: done ? "done" : adviceDone || recommendations.length > 0 ? "active" : failed ? "done" : "pending"
+    }
+  ];
 }
 
 function TradesPortfolio({
@@ -595,21 +878,63 @@ function TradesSystemEditor({
 }) {
   const [draft, setDraft] = useState(settings);
   const [promptText, setPromptText] = useState(settings.prompt_text || "");
+  const [promptMode, setPromptMode] = useState<"settings" | "manual">(hasManualPrompt(settings) ? "manual" : "settings");
+  const [renderingPrompt, setRenderingPrompt] = useState(false);
 
-  async function renderPrompt() {
+  useEffect(() => {
+    setDraft(settings);
+    setPromptMode(hasManualPrompt(settings) ? "manual" : "settings");
+    setPromptText(settings.prompt_text || "");
+  }, [settings]);
+
+  useEffect(() => {
+    if (promptMode !== "settings") {
+      return;
+    }
+    let cancelled = false;
+    const timer = window.setTimeout(async () => {
+      try {
+        setRenderingPrompt(true);
+        const result = await renderTradePrompt(draft);
+        if (!cancelled) {
+          setPromptText(result.promptText);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          onError(err instanceof Error ? err.message : "Could not render prompt.");
+        }
+      } finally {
+        if (!cancelled) {
+          setRenderingPrompt(false);
+        }
+      }
+    }, 250);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [draft, onError, promptMode]);
+
+  async function renderPromptNow() {
     try {
-      const result = await renderTradePrompt();
+      setRenderingPrompt(true);
+      const result = await renderTradePrompt(draft);
       setPromptText(result.promptText);
     } catch (err) {
       onError(err instanceof Error ? err.message : "Could not render prompt.");
+    } finally {
+      setRenderingPrompt(false);
     }
   }
 
   async function save(event: FormEvent) {
     event.preventDefault();
     try {
-      await saveTradesSettings(draft);
-      await saveTradePrompt(promptText, []);
+      if (promptMode === "settings") {
+        await saveTradesSettings({ ...draft, prompt_text: "", overridden_settings_json: [] });
+      } else {
+        await saveTradePrompt(promptText, ["manual_prompt"]);
+      }
       await onSaved();
     } catch (err) {
       onError(err instanceof Error ? err.message : "Could not save settings.");
@@ -618,7 +943,8 @@ function TradesSystemEditor({
 
   return (
     <form className="trades-stack" onSubmit={(event) => void save(event)}>
-      <section className="trades-panel settings-grid">
+      <fieldset className={`trades-panel settings-grid ${promptMode === "manual" ? "disabled-panel" : ""}`} disabled={promptMode === "manual"}>
+        <legend>Settings</legend>
         <label>
           Advice time
           <input value={draft.advice_time} onChange={(event) => setDraftField("advice_time", event.target.value)} />
@@ -668,7 +994,7 @@ function TradesSystemEditor({
         <label className="checkbox-row">
           <input
             type="checkbox"
-            checked={draft.stocks_enabled === 1}
+            checked={Number(draft.stocks_enabled) === 1}
             onChange={(event) => setDraftField("stocks_enabled", event.target.checked ? 1 : 0)}
           />
           Stocks
@@ -676,7 +1002,7 @@ function TradesSystemEditor({
         <label className="checkbox-row">
           <input
             type="checkbox"
-            checked={draft.etfs_enabled === 1}
+            checked={Number(draft.etfs_enabled) === 1}
             onChange={(event) => setDraftField("etfs_enabled", event.target.checked ? 1 : 0)}
           />
           ETFs
@@ -684,24 +1010,36 @@ function TradesSystemEditor({
         <label className="checkbox-row">
           <input
             type="checkbox"
-            checked={draft.crypto_enabled === 1}
+            checked={Number(draft.crypto_enabled) === 1}
             onChange={(event) => setDraftField("crypto_enabled", event.target.checked ? 1 : 0)}
           />
           Crypto
         </label>
-      </section>
+      </fieldset>
       <section className="trades-panel">
         <div className="panel-heading-row">
-          <h2>Prompt</h2>
-          <button className="secondary-button" type="button" onClick={() => void renderPrompt()}>
-            Reset all
+          <div>
+            <h2>{promptMode === "settings" ? "Settings prompt" : "Manual prompt"}</h2>
+            <p>{renderingPrompt ? "Updating prompt preview..." : "This is the instruction prompt used before runtime portfolio/news data is appended."}</p>
+          </div>
+          <button className="secondary-button" type="button" onClick={() => void renderPromptNow()} disabled={promptMode === "manual"}>
+            Update prompt
+          </button>
+          <button
+            className="secondary-button"
+            type="button"
+            onClick={() => {
+              setPromptMode((current) => (current === "settings" ? "manual" : "settings"));
+            }}
+          >
+            {promptMode === "settings" ? "Manual prompt" : "Settings prompt"}
           </button>
         </div>
-        <textarea rows={18} value={promptText} onChange={(event) => setPromptText(event.target.value)} />
+        <textarea rows={18} value={promptText} readOnly={promptMode === "settings"} onChange={(event) => setPromptText(event.target.value)} />
       </section>
       <button className="primary-button" type="submit">
         <Save size={16} aria-hidden />
-        Save system
+        {promptMode === "settings" ? "Save settings" : "Save manual prompt"}
       </button>
     </form>
   );
@@ -873,6 +1211,42 @@ function formatNumber(value: number): string {
 function formatDate(value: string): string {
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? value : new Intl.DateTimeFormat("en", { dateStyle: "medium", timeStyle: "short" }).format(date);
+}
+
+function formatJsonText(value: string): string {
+  if (!value) {
+    return "";
+  }
+  try {
+    return JSON.stringify(JSON.parse(value), null, 2);
+  } catch {
+    return value;
+  }
+}
+
+function parseJsonObject(value: string): Record<string, unknown> {
+  try {
+    const parsed = JSON.parse(value || "{}");
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : {};
+  } catch {
+    return {};
+  }
+}
+
+function parseJsonArray(value: string | null): unknown[] {
+  if (!value) {
+    return [];
+  }
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function hasManualPrompt(settings: TradeSettings): boolean {
+  return parseJsonArray(settings.overridden_settings_json).includes("manual_prompt");
 }
 
 const defaultImportExample = `Cash: 1250 EUR

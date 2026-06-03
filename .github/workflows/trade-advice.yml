@@ -11,6 +11,10 @@ on:
         description: Portfolio id
         required: false
         default: "max"
+      run_id:
+        description: Existing D1 run id for UI progress tracking
+        required: false
+        default: ""
   schedule:
     - cron: "0 5 * * 1-5"
     - cron: "0 6 * * 1-5"
@@ -60,4 +64,5 @@ jobs:
           EODHD_API_KEY: ${{ secrets.EODHD_API_KEY }}
           COINGECKO_API_KEY: ${{ secrets.COINGECKO_API_KEY }}
           TRADES_DEFAULT_PORTFOLIO_ID: ${{ github.event.inputs.portfolio_id || 'max' }}
+          TRADES_RUN_ID: ${{ github.event.inputs.run_id || '' }}
           FORCE_GENERATE: ${{ github.event.inputs.force || 'false' }}

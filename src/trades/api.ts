@@ -24,6 +24,10 @@ export interface TradeSettings {
   updated_at: string;
 }
 
+export type TradeSettingsSave = Partial<Omit<TradeSettings, "overridden_settings_json">> & {
+  overridden_settings_json?: unknown[] | string;
+};
+
 export interface TradePosition {
   id: string;
   asset_type: string;
@@ -62,6 +66,7 @@ export interface ParsedHolding {
 export interface TradeRecommendation {
   id: string;
   advice_run_id: string;
+  client_recommendation_id: string | null;
   action: string;
   asset_type: string;
   symbol: string;
@@ -74,7 +79,10 @@ export interface TradeRecommendation {
   suggested_gross_amount: number | null;
   suggested_fee: number;
   suggested_cash_effect: number | null;
+  user_display_title: string | null;
   reason: string;
+  cash_math: string | null;
+  sources_json: string | null;
   risk: string | null;
   confidence: string;
   status: string;
@@ -103,6 +111,12 @@ export interface AuditLogListItem {
   output_tokens: number;
   web_search_calls: number;
   created_at: string;
+}
+
+export interface AdviceProgressLog extends AuditLogListItem {
+  prompt_text: string;
+  raw_response_json: string;
+  parsed_output_json: string;
 }
 
 export class TradesApiError extends Error {
@@ -173,15 +187,18 @@ export async function fetchTradesSettings(): Promise<{ settings: TradeSettings; 
   return tradesFetch("/api/trades/settings");
 }
 
-export async function saveTradesSettings(settings: Partial<TradeSettings>): Promise<{ settings: TradeSettings }> {
+export async function saveTradesSettings(settings: TradeSettingsSave): Promise<{ settings: TradeSettings }> {
   return tradesFetch("/api/trades/settings", {
     method: "POST",
     body: JSON.stringify(settings)
   });
 }
 
-export async function renderTradePrompt(): Promise<{ promptText: string; blocks: unknown[] }> {
-  return tradesFetch("/api/trades/prompt/render", { method: "POST" });
+export async function renderTradePrompt(settings?: Partial<TradeSettings>): Promise<{ promptText: string; blocks: unknown[] }> {
+  return tradesFetch("/api/trades/prompt/render", {
+    method: "POST",
+    body: JSON.stringify({ settings })
+  });
 }
 
 export async function saveTradePrompt(promptText: string, overriddenSettings: string[]): Promise<void> {
@@ -195,8 +212,16 @@ export async function fetchTradeAdvice(): Promise<{ run: AdviceRun | null; recom
   return tradesFetch("/api/trades/advice");
 }
 
-export async function runTradeAdviceNow(): Promise<void> {
-  await tradesFetch("/api/trades/advice/run", { method: "POST" });
+export async function runTradeAdviceNow(): Promise<{ ok: boolean; runId: string; status: string; alreadyRunning: boolean }> {
+  return tradesFetch("/api/trades/advice/run", { method: "POST" });
+}
+
+export async function fetchTradeAdviceProgress(runId?: string): Promise<{
+  run: AdviceRun | null;
+  logs: AdviceProgressLog[];
+  recommendations: TradeRecommendation[];
+}> {
+  return tradesFetch(`/api/trades/advice/progress${runId ? `?runId=${encodeURIComponent(runId)}` : ""}`);
 }
 
 export async function confirmTradeAdvice(

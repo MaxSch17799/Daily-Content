@@ -8,9 +8,33 @@ export const onRequestPost = async ({ env, request }: FunctionContext) => {
     return session;
   }
 
+  const activeRun = await env.DB.prepare(
+    `SELECT id, status, message, started_at
+     FROM trade_advice_runs
+     WHERE portfolio_id = ?
+       AND status IN ('queued', 'running')
+       AND datetime(started_at) >= datetime('now', '-2 hours')
+     ORDER BY started_at DESC
+     LIMIT 1`
+  )
+    .bind(session.portfolioId)
+    .first<{ id: string; status: string; message: string | null; started_at: string }>();
+  if (activeRun) {
+    return jsonResponse({ ok: true, runId: activeRun.id, status: activeRun.status, alreadyRunning: true });
+  }
+
   if (!env.GITHUB_DISPATCH_TOKEN || !env.GITHUB_OWNER || !env.GITHUB_REPO) {
     return errorResponse(501, "manual_run_not_configured", "GitHub workflow dispatch is not configured.");
   }
+
+  const runId = crypto.randomUUID();
+  const startedAt = new Date().toISOString();
+  await env.DB.prepare(
+    `INSERT INTO trade_advice_runs (id, portfolio_id, run_date, run_type, status, started_at, message)
+     VALUES (?, ?, ?, 'manual', 'queued', ?, 'Workflow dispatch queued. Waiting for GitHub Actions to start.')`
+  )
+    .bind(runId, session.portfolioId, startedAt.slice(0, 10), startedAt)
+    .run();
 
   const workflowId = env.GITHUB_TRADES_WORKFLOW_ID || "trade-advice.yml";
   const response = await fetch(
@@ -27,15 +51,20 @@ export const onRequestPost = async ({ env, request }: FunctionContext) => {
         ref: "main",
         inputs: {
           force: "true",
-          portfolio_id: session.portfolioId
+          portfolio_id: session.portfolioId,
+          run_id: runId
         }
       })
     }
   );
 
   if (!response.ok) {
-    return errorResponse(response.status, "workflow_dispatch_failed", await response.text());
+    const errorText = await response.text();
+    await env.DB.prepare("UPDATE trade_advice_runs SET status = 'failed', message = ?, finished_at = ? WHERE id = ?")
+      .bind(errorText.slice(0, 1000), new Date().toISOString(), runId)
+      .run();
+    return errorResponse(response.status, "workflow_dispatch_failed", errorText);
   }
 
-  return jsonResponse({ ok: true });
+  return jsonResponse({ ok: true, runId, status: "queued", alreadyRunning: false });
 };

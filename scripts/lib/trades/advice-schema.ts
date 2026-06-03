@@ -6,6 +6,7 @@ export const TradeAdviceSchema = z.object({
   cash_after_plan: z.number(),
   cash_position_reason: z.string().min(1),
   estimated_total_fees: z.number(),
+  execution_order: z.array(z.string()).default([]),
   recommendations: z
     .array(
       z.object({
@@ -15,16 +16,27 @@ export const TradeAdviceSchema = z.object({
         symbol: z.string().min(1),
         name: z.string().min(1),
         isin: z.string().nullable().optional(),
-        quantity: z.number().nullable().optional(),
-        estimated_price: z.number().nullable().optional(),
+        quantity: z.number(),
+        estimated_price: z.number(),
         price_currency: z.string().default("EUR"),
-        estimated_gross_amount: z.number().nullable().optional(),
+        estimated_gross_amount: z.number(),
         estimated_fee: z.number().default(1),
-        estimated_cash_effect: z.number().nullable().optional(),
+        estimated_cash_effect: z.number(),
         trade_republic_availability: z.enum(["confirmed", "likely", "needs_check", "unavailable"]),
         uses_fractional_quantity: z.boolean().default(false),
         linked_recommendation_ids: z.array(z.string()).default([]),
+        user_display_title: z.string().min(1),
         reason: z.string().min(1),
+        cash_math: z.string().min(1),
+        sources: z
+          .array(
+            z.object({
+              title: z.string().min(1),
+              url: z.string().min(1),
+              relevance: z.string().min(1)
+            })
+          )
+          .default([]),
         risk: z.string().nullable().optional(),
         confidence: z.enum(["low", "medium", "high"]).default("low")
       })
@@ -62,6 +74,7 @@ export const tradeAdviceJsonSchema = {
     "cash_after_plan",
     "cash_position_reason",
     "estimated_total_fees",
+    "execution_order",
     "recommendations",
     "hold_notes",
     "warnings",
@@ -94,7 +107,10 @@ export const tradeAdviceJsonSchema = {
           "trade_republic_availability",
           "uses_fractional_quantity",
           "linked_recommendation_ids",
+          "user_display_title",
           "reason",
+          "cash_math",
+          "sources",
           "risk",
           "confidence"
         ],
@@ -105,21 +121,37 @@ export const tradeAdviceJsonSchema = {
           symbol: { type: "string" },
           name: { type: "string" },
           isin: { type: ["string", "null"] },
-          quantity: { type: ["number", "null"] },
-          estimated_price: { type: ["number", "null"] },
+          quantity: { type: "number" },
+          estimated_price: { type: "number" },
           price_currency: { type: "string" },
-          estimated_gross_amount: { type: ["number", "null"] },
+          estimated_gross_amount: { type: "number" },
           estimated_fee: { type: "number" },
-          estimated_cash_effect: { type: ["number", "null"] },
+          estimated_cash_effect: { type: "number" },
           trade_republic_availability: { type: "string", enum: ["confirmed", "likely", "needs_check", "unavailable"] },
           uses_fractional_quantity: { type: "boolean" },
           linked_recommendation_ids: { type: "array", items: { type: "string" } },
+          user_display_title: { type: "string" },
           reason: { type: "string" },
+          cash_math: { type: "string" },
+          sources: {
+            type: "array",
+            items: {
+              type: "object",
+              additionalProperties: false,
+              required: ["title", "url", "relevance"],
+              properties: {
+                title: { type: "string" },
+                url: { type: "string" },
+                relevance: { type: "string" }
+              }
+            }
+          },
           risk: { type: ["string", "null"] },
           confidence: { type: "string", enum: ["low", "medium", "high"] }
         }
       }
     },
+    execution_order: { type: "array", items: { type: "string" } },
     hold_notes: {
       type: "array",
       items: {

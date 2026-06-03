@@ -5,14 +5,14 @@ import { isTradeSession, loadTradeSettings, requireTradeSession } from "../../_l
 interface SettingsBody {
   advice_time?: string;
   timezone?: string;
-  weekdays_only?: boolean;
+  weekdays_only?: boolean | number | string;
   risk_profile?: string;
-  stocks_enabled?: boolean;
-  etfs_enabled?: boolean;
-  crypto_enabled?: boolean;
+  stocks_enabled?: boolean | number | string;
+  etfs_enabled?: boolean | number | string;
+  crypto_enabled?: boolean | number | string;
   max_cash_deploy_pct?: number;
   min_trade_value?: number;
-  fractional_enabled?: boolean;
+  fractional_enabled?: boolean | number | string;
   fractional_increment?: number;
   web_search_mode?: string;
   benchmark_symbol?: string;
@@ -61,7 +61,11 @@ export const onRequestPost = async ({ env, request }: FunctionContext) => {
     benchmark_symbol: String(body.benchmark_symbol ?? (current.benchmark_symbol || "EUNL")).trim().toUpperCase(),
     benchmark_name: String(body.benchmark_name ?? (current.benchmark_name || "MSCI World ETF proxy")).trim(),
     prompt_text: String(body.prompt_text ?? current.prompt_text ?? ""),
-    overridden_settings_json: JSON.stringify(Array.isArray(body.overridden_settings_json) ? body.overridden_settings_json : [])
+    overridden_settings_json: JSON.stringify(
+      Array.isArray(body.overridden_settings_json)
+        ? body.overridden_settings_json
+        : parseJsonArray(current.overridden_settings_json)
+    )
   };
 
   await env.DB.prepare(
@@ -97,8 +101,23 @@ export const onRequestPost = async ({ env, request }: FunctionContext) => {
   return jsonResponse({ ok: true, settings: await loadTradeSettings(env, session.portfolioId) });
 };
 
-function boolToInt(value: boolean | undefined, fallback: number): number {
-  return typeof value === "boolean" ? (value ? 1 : 0) : fallback;
+function boolToInt(value: boolean | number | string | undefined, fallback: number): number {
+  if (typeof value === "boolean") {
+    return value ? 1 : 0;
+  }
+  if (typeof value === "number") {
+    return value ? 1 : 0;
+  }
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (["true", "1", "yes", "on"].includes(normalized)) {
+      return 1;
+    }
+    if (["false", "0", "no", "off"].includes(normalized)) {
+      return 0;
+    }
+  }
+  return fallback;
 }
 
 function finiteNumber(value: number | undefined, fallback: number, min: number, max: number): number {
@@ -111,4 +130,19 @@ function finiteNumber(value: number | undefined, fallback: number, min: number, 
 
 function cleanTime(value: string): string {
   return /^\d{2}:\d{2}$/.test(value) ? value : "07:00";
+}
+
+function parseJsonArray(value: unknown): unknown[] {
+  if (Array.isArray(value)) {
+    return value;
+  }
+  if (typeof value !== "string") {
+    return [];
+  }
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
 }
