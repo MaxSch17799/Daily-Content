@@ -25,12 +25,45 @@ export const onRequestPost = async ({ env, request }: FunctionContext) => {
   const current = await loadTradeSettings(env, session.portfolioId);
   const body = await readOptionalJson<{ settings?: Partial<PromptSettings> }>(request);
   const settings = { ...current, ...(body.settings || {}) } as PromptSettings;
+  const [positions, cash, previousAdvice, unavailableAssets] = await Promise.all([
+    env.DB.prepare(
+      `SELECT asset_type, symbol, name, isin, quantity, current_value, currency, provider, provider_symbol, updated_at
+       FROM trade_positions
+       WHERE portfolio_id = ?
+       ORDER BY asset_type, symbol`
+    )
+      .bind(session.portfolioId)
+      .all(),
+    env.DB.prepare("SELECT currency, amount, updated_at FROM trade_cash_balances WHERE portfolio_id = ? ORDER BY currency")
+      .bind(session.portfolioId)
+      .all(),
+    env.DB.prepare(
+      `SELECT id, run_date, status, summary, output_json
+       FROM trade_advice_runs
+       WHERE portfolio_id = ?
+       ORDER BY started_at DESC
+       LIMIT 5`
+    )
+      .bind(session.portfolioId)
+      .all(),
+    env.DB.prepare("SELECT asset_type, symbol, name, reason FROM trade_unavailable_assets WHERE portfolio_id = ? ORDER BY symbol")
+      .bind(session.portfolioId)
+      .all()
+  ]);
   const blocks = buildPromptBlocks(settings);
   const instructionPrompt = blocks.map((block) => `${block.section}\n${block.current_text}`).join("\n\n");
 
   return jsonResponse({
     blocks,
-    promptText: buildPromptPreview(instructionPrompt, settings)
+    promptText: buildPromptPreview(instructionPrompt, settings, {
+      snapshot: {
+        cash: cash.results ?? [],
+        holdings: positions.results ?? [],
+        note: "Quote refresh and market-value recalculation happen again at advice-run time."
+      },
+      previousAdvice: previousAdvice.results ?? [],
+      unavailableAssets: unavailableAssets.results ?? []
+    })
   });
 };
 
@@ -104,14 +137,18 @@ function buildPromptBlocks(settings: PromptSettings) {
   }));
 }
 
-function buildPromptPreview(instructionPrompt: string, settings: PromptSettings): string {
+function buildPromptPreview(
+  instructionPrompt: string,
+  settings: PromptSettings,
+  runtime: { snapshot: unknown; previousAdvice: unknown[]; unavailableAssets: unknown[] }
+): string {
   return [
     instructionPrompt,
     "",
     "Runtime data appended when advice is generated:",
     "",
     "Portfolio snapshot JSON:",
-    "{ cash, holdings, quote data, current values, weights, and total value }",
+    JSON.stringify(runtime.snapshot, null, 2),
     "",
     "Settings JSON:",
     JSON.stringify(settings, null, 2),
@@ -120,10 +157,10 @@ function buildPromptPreview(instructionPrompt: string, settings: PromptSettings)
     settings.web_search_mode === "none" ? "No web context will be requested." : "Recent web/news summary with source URLs.",
     "",
     "Previous advice and actual follow-through:",
-    "{ last advice runs and confirmed/skipped trades }",
+    JSON.stringify(runtime.previousAdvice, null, 2),
     "",
     "Unavailable Trade Republic assets:",
-    "{ assets previously marked unavailable }",
+    JSON.stringify(runtime.unavailableAssets, null, 2),
     "",
     "The live run details panel shows the exact full prompt and exact response saved for each AI call."
   ].join("\n");
