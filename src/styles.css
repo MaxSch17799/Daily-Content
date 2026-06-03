@@ -622,6 +622,27 @@ th {
   background: rgba(255, 250, 240, 0.74);
 }
 
+.advice-history {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.advice-history .nav-button {
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 52px;
+  min-width: 132px;
+  line-height: 1.2;
+}
+
+.advice-history small {
+  color: inherit;
+  font-size: 0.76rem;
+  opacity: 0.74;
+}
+
 .trades-stack {
   display: grid;
   gap: 16px;
@@ -838,6 +859,15 @@ th {
   min-height: 170px;
   font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
   font-size: 0.82rem;
+}
+
+.candidate-table input,
+.candidate-table select {
+  min-width: 120px;
+}
+
+.candidate-table input[type="checkbox"] {
+  min-width: 18px;
 }
 
 .advice-summary-grid {

@@ -28,6 +28,26 @@ export type TradeSettingsSave = Partial<Omit<TradeSettings, "overridden_settings
   overridden_settings_json?: unknown[] | string;
 };
 
+export interface TradeCandidateAsset {
+  id: string;
+  portfolio_id: string;
+  enabled: number;
+  asset_type: "stock" | "etf" | "crypto";
+  symbol: string;
+  name: string;
+  isin: string | null;
+  provider: string | null;
+  provider_symbol: string | null;
+  trade_republic_availability: string;
+  source: string;
+  manual_price: number | null;
+  price_currency: string;
+  manual_price_updated_at: string | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface TradePosition {
   id: string;
   asset_type: string;
@@ -98,6 +118,13 @@ export interface AdviceRun {
   started_at: string;
   finished_at: string | null;
   message: string | null;
+  recommendation_count?: number;
+  input_batch_id?: string | null;
+  input_status?: string | null;
+  input_submitted_at?: string | null;
+  input_updated_at?: string | null;
+  input_notes?: string | null;
+  has_newer_input?: number;
 }
 
 export interface AuditLogListItem {
@@ -117,6 +144,27 @@ export interface AdviceProgressLog extends AuditLogListItem {
   prompt_text: string;
   raw_response_json: string;
   parsed_output_json: string;
+}
+
+export interface TradeTransaction {
+  id: string;
+  portfolio_id: string;
+  recommendation_id: string | null;
+  advice_input_batch_id: string | null;
+  type: string;
+  asset_type: string | null;
+  symbol: string | null;
+  name: string | null;
+  isin: string | null;
+  quantity: number | null;
+  price: number | null;
+  gross_amount: number | null;
+  fee: number;
+  currency: string;
+  cash_effect: number;
+  notes: string | null;
+  traded_at: string;
+  created_at: string;
 }
 
 export class TradesApiError extends Error {
@@ -183,7 +231,11 @@ export async function commitPortfolioImport(rawText: string, cash: number, holdi
   });
 }
 
-export async function fetchTradesSettings(): Promise<{ settings: TradeSettings; unavailableAssets: unknown[] }> {
+export async function fetchTradesSettings(): Promise<{
+  settings: TradeSettings;
+  unavailableAssets: unknown[];
+  candidateAssets: TradeCandidateAsset[];
+}> {
   return tradesFetch("/api/trades/settings");
 }
 
@@ -208,7 +260,22 @@ export async function saveTradePrompt(promptText: string, overriddenSettings: st
   });
 }
 
-export async function fetchTradeAdvice(): Promise<{ run: AdviceRun | null; recommendations: TradeRecommendation[] }> {
+export async function fetchTradeCandidates(): Promise<{ assets: TradeCandidateAsset[] }> {
+  return tradesFetch("/api/trades/candidates");
+}
+
+export async function saveTradeCandidates(assets: TradeCandidateAsset[]): Promise<{ assets: TradeCandidateAsset[] }> {
+  return tradesFetch("/api/trades/candidates", {
+    method: "POST",
+    body: JSON.stringify({ assets })
+  });
+}
+
+export async function fetchTradeAdvice(): Promise<{
+  run: AdviceRun | null;
+  runs: AdviceRun[];
+  recommendations: TradeRecommendation[];
+}> {
   return tradesFetch("/api/trades/advice");
 }
 
@@ -220,6 +287,8 @@ export async function fetchTradeAdviceProgress(runId?: string): Promise<{
   run: AdviceRun | null;
   logs: AdviceProgressLog[];
   recommendations: TradeRecommendation[];
+  inputBatch: { id: string; status: string; submitted_at: string; updated_at: string; notes: string | null } | null;
+  inputTransactions: TradeTransaction[];
 }> {
   return tradesFetch(`/api/trades/advice/progress${runId ? `?runId=${encodeURIComponent(runId)}` : ""}`);
 }
@@ -233,12 +302,21 @@ export async function confirmTradeAdvice(
     actualPrice?: number;
     actualFee?: number;
     actualCurrency?: string;
+    actualTradedAt?: string;
     notes?: string;
-  }>
+  }>,
+  notes?: string
 ): Promise<void> {
   await tradesFetch(`/api/trades/advice/${encodeURIComponent(adviceRunId)}/confirm`, {
     method: "POST",
-    body: JSON.stringify({ confirmations })
+    body: JSON.stringify({ confirmations, notes })
+  });
+}
+
+export async function ignoreTradeAdvice(adviceRunId: string, reason?: string): Promise<void> {
+  await tradesFetch(`/api/trades/advice/${encodeURIComponent(adviceRunId)}/ignore`, {
+    method: "POST",
+    body: JSON.stringify({ reason })
   });
 }
 

@@ -5,9 +5,11 @@ import {
   AdviceProgressLog,
   AuditLogListItem,
   ParsedHolding,
+  TradeCandidateAsset,
   TradePosition,
   TradeRecommendation,
   TradeSettings,
+  TradeTransaction,
   clearTradesToken,
   commitPortfolioImport,
   confirmTradeAdvice,
@@ -19,11 +21,13 @@ import {
   fetchTradesSession,
   fetchTradesSettings,
   getTradesToken,
+  ignoreTradeAdvice,
   loginTrades,
   logoutTrades,
   parsePortfolioText,
   renderTradePrompt,
   runTradeAdviceNow,
+  saveTradeCandidates,
   saveTradePrompt,
   saveTradeTransaction,
   saveTradesSettings,
@@ -50,12 +54,14 @@ export function TradesPage({ section = "dashboard" }: TradesPageProps) {
   const [unlocked, setUnlocked] = useState(false);
   const [loginPassword, setLoginPassword] = useState("");
   const [portfolio, setPortfolio] = useState<PortfolioState | null>(null);
-  const [advice, setAdvice] = useState<{ run: AdviceRun | null; recommendations: TradeRecommendation[] }>({
+  const [advice, setAdvice] = useState<{ run: AdviceRun | null; runs: AdviceRun[]; recommendations: TradeRecommendation[] }>({
     run: null,
+    runs: [],
     recommendations: []
   });
   const [transactions, setTransactions] = useState<unknown[]>([]);
   const [settings, setSettings] = useState<TradeSettings | null>(null);
+  const [candidateAssets, setCandidateAssets] = useState<TradeCandidateAsset[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLogListItem[]>([]);
   const [auditQuery, setAuditQuery] = useState("");
   const [loading, setLoading] = useState(false);
@@ -76,6 +82,7 @@ export function TradesPage({ section = "dashboard" }: TradesPageProps) {
       setAdvice(adviceResult);
       setTransactions(transactionResult.transactions);
       setSettings(settingsResult.settings);
+      setCandidateAssets(settingsResult.candidateAssets || []);
       setUnlocked(true);
     } catch (err) {
       if (getTradesToken()) {
@@ -200,7 +207,7 @@ export function TradesPage({ section = "dashboard" }: TradesPageProps) {
             return result;
           }}
           onSaved={async () => {
-            setMessage("Actual trades saved.");
+            setMessage("Advice interaction saved.");
             await loadAll();
           }}
           onError={setError}
@@ -220,6 +227,7 @@ export function TradesPage({ section = "dashboard" }: TradesPageProps) {
       {activeSection === "settings" && settings && (
         <TradesSystemEditor
           settings={settings}
+          candidateAssets={candidateAssets}
           onSaved={async () => {
             setMessage("Trading settings saved.");
             await loadAll();
@@ -389,31 +397,47 @@ function TradesAdvice({
   onSaved,
   onError
 }: {
-  advice: { run: AdviceRun | null; recommendations: TradeRecommendation[] };
+  advice: { run: AdviceRun | null; runs: AdviceRun[]; recommendations: TradeRecommendation[] };
   onRun: () => Promise<{ runId: string; status: string; alreadyRunning: boolean }>;
   onSaved: () => Promise<void>;
   onError: (message: string) => void;
 }) {
   const [confirming, setConfirming] = useState(false);
-  const [drafts, setDrafts] = useState(() => advice.recommendations.map(recommendationToDraft));
+  const [drafts, setDrafts] = useState(() => advice.recommendations.map((recommendation) => recommendationToDraft(recommendation)));
   const [running, setRunning] = useState(advice.run?.status === "queued" || advice.run?.status === "running");
   const [progressRunId, setProgressRunId] = useState(advice.run?.status === "queued" || advice.run?.status === "running" ? advice.run.id : "");
   const [progress, setProgress] = useState<{
     run: AdviceRun | null;
     logs: AdviceProgressLog[];
     recommendations: TradeRecommendation[];
-  }>({ run: null, logs: [], recommendations: [] });
+    inputBatch: { id: string; status: string; submitted_at: string; updated_at: string; notes: string | null } | null;
+    inputTransactions: TradeTransaction[];
+  }>({ run: null, logs: [], recommendations: [], inputBatch: null, inputTransactions: [] });
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const [selectedRunId, setSelectedRunId] = useState(advice.run?.id || "");
+  const [inputMode, setInputMode] = useState<"edit" | "view" | "ignore">("edit");
+  const [adviceNote, setAdviceNote] = useState("");
 
   useEffect(() => {
-    setDrafts(advice.recommendations.map(recommendationToDraft));
+    setDrafts(advice.recommendations.map((recommendation) => recommendationToDraft(recommendation)));
   }, [advice.recommendations]);
 
   useEffect(() => {
-    if (progress.recommendations.length > 0) {
-      setDrafts(progress.recommendations.map(recommendationToDraft));
+    if (advice.run?.id && !selectedRunId) {
+      setSelectedRunId(advice.run.id);
     }
-  }, [progress.recommendations]);
+  }, [advice.run, selectedRunId]);
+
+  useEffect(() => {
+    if (progress.recommendations.length > 0) {
+      setDrafts(progress.recommendations.map((recommendation) => recommendationToDraft(recommendation, progress.inputTransactions)));
+    }
+  }, [progress.inputTransactions, progress.recommendations]);
+
+  useEffect(() => {
+    const selectedRun = advice.runs.find((run) => run.id === selectedRunId) || advice.run;
+    setAdviceNote(progress.inputBatch?.notes || selectedRun?.input_notes || "");
+  }, [advice.run, advice.runs, progress.inputBatch, selectedRunId]);
 
   useEffect(() => {
     const activeRunId = advice.run && ["queued", "running"].includes(advice.run.status) ? advice.run.id : "";
@@ -452,17 +476,53 @@ function TradesAdvice({
     };
   }, [onError, progressRunId, running]);
 
+  useEffect(() => {
+    const runId = selectedRunId || advice.run?.id || "";
+    if (!runId || running || progress.run?.id === runId) {
+      return;
+    }
+    let cancelled = false;
+    fetchTradeAdviceProgress(runId)
+      .then((result) => {
+        if (!cancelled) {
+          setProgress(result);
+        }
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          onError(err instanceof Error ? err.message : "Could not load advice details.");
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [advice.run?.id, onError, progress.run?.id, running, selectedRunId]);
+
   async function saveConfirmations() {
     const runForConfirm = progress.run || advice.run;
     if (!runForConfirm) {
       return;
     }
     try {
-      await confirmTradeAdvice(runForConfirm.id, drafts);
+      await confirmTradeAdvice(runForConfirm.id, drafts, adviceNote);
       setConfirming(false);
       await onSaved();
     } catch (err) {
       onError(err instanceof Error ? err.message : "Could not save actual trades.");
+    }
+  }
+
+  async function saveIgnoredAdvice() {
+    const runForIgnore = progress.run || advice.run;
+    if (!runForIgnore) {
+      return;
+    }
+    try {
+      await ignoreTradeAdvice(runForIgnore.id, adviceNote);
+      setConfirming(false);
+      await onSaved();
+    } catch (err) {
+      onError(err instanceof Error ? err.message : "Could not ignore advice.");
     }
   }
 
@@ -482,11 +542,14 @@ function TradesAdvice({
         message: "Dispatching GitHub workflow."
       },
       logs: [],
-      recommendations: []
+      recommendations: [],
+      inputBatch: null,
+      inputTransactions: []
     });
     try {
       const result = await onRun();
       setProgressRunId(result.runId);
+      setSelectedRunId(result.runId);
       setProgress((current) => ({
         ...current,
         run: {
@@ -514,6 +577,11 @@ function TradesAdvice({
   const steps = buildAdviceSteps(visibleRun, progress.logs, visibleRecommendations);
   const completedSteps = steps.filter((step) => step.state === "done").length;
   const progressPercent = Math.round((completedSteps / steps.length) * 100);
+  const inputButtonLabel = visibleRun ? getInputButtonLabel(visibleRun, progress.inputBatch) : "Input actual trades";
+  const inputStatus = progress.inputBatch?.status || visibleRun?.input_status || "";
+  const inputIgnored = inputStatus === "ignored";
+  const inputReadOnly = inputButtonLabel === "View input" || inputButtonLabel === "View ignored";
+  const canIgnoreAdvice = Boolean(visibleRun && !inputReadOnly && !progress.inputBatch && !visibleRun.input_batch_id);
 
   return (
     <div className="trades-stack">
@@ -525,7 +593,28 @@ function TradesAdvice({
             {running ? "Generating advice..." : "Run advice now"}
           </button>
         </div>
-        {(running || visibleRun?.status === "queued" || visibleRun?.status === "running") && (
+        {advice.runs.length > 0 && (
+          <div className="advice-history">
+            {advice.runs.map((run) => (
+              <button
+                className={run.id === (visibleRun?.id || selectedRunId) ? "nav-button active" : "nav-button"}
+                type="button"
+                key={run.id}
+                onClick={() => {
+                  setSelectedRunId(run.id);
+                  setProgressRunId("");
+                  setRunning(["queued", "running"].includes(run.status));
+                  setConfirming(false);
+                  setProgress({ run, logs: [], recommendations: [], inputBatch: null, inputTransactions: [] });
+                }}
+              >
+                {formatDate(run.started_at)}
+                <small>{getInputButtonLabel(run, null)}</small>
+              </button>
+            ))}
+          </div>
+        )}
+        {visibleRun && (running || progress.logs.length > 0 || detailsOpen) && (
           <AdviceProgressPanel
             run={visibleRun}
             logs={progress.logs}
@@ -539,6 +628,10 @@ function TradesAdvice({
         {visibleRun?.status === "failed" && <ErrorPanel message={visibleRun.message || "Advice generation failed."} />}
         {visibleRun && visibleRun.status !== "queued" && visibleRun.status !== "running" && (
           <>
+            <p className="meta-line compact">
+              <span>Advice date: {formatDate(visibleRun.started_at)}</span>
+              {visibleRun.finished_at && <span>Completed: {formatDate(visibleRun.finished_at)}</span>}
+            </p>
             <p>{visibleRun.summary || "Advice generated."}</p>
             <RunOutputSummary run={visibleRun} />
             <div className="recommendation-grid">
@@ -571,72 +664,134 @@ function TradesAdvice({
                 </article>
               ))}
             </div>
-            <button className="secondary-button" type="button" onClick={() => setConfirming((current) => !current)}>
-              Input actual trades
-            </button>
+            <div className="button-row">
+              <button
+                className="secondary-button"
+                type="button"
+                onClick={() => {
+                  setInputMode(inputReadOnly ? "view" : "edit");
+                  setConfirming((current) => !current);
+                }}
+                disabled={inputButtonLabel === "No input"}
+              >
+                {inputButtonLabel}
+              </button>
+              {canIgnoreAdvice && (
+                <button
+                  className="secondary-button"
+                  type="button"
+                  onClick={() => {
+                    setInputMode("ignore");
+                    setAdviceNote("");
+                    setConfirming(true);
+                  }}
+                >
+                  Ignore advice
+                </button>
+              )}
+            </div>
           </>
         )}
       </section>
       {confirming && visibleRun && (
         <section className="trades-panel">
-          <h2>Confirm actual trades</h2>
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Status</th>
-                  <th>Symbol</th>
-                  <th>Qty</th>
-                  <th>Price</th>
-                  <th>Fee</th>
-                  <th>Notes</th>
-                </tr>
-              </thead>
-              <tbody>
-                {drafts.map((draft, index) => (
-                  <tr key={draft.recommendationId}>
-                    <td>
-                      <select value={draft.status} onChange={(event) => updateDraft(index, "status", event.target.value)}>
-                        <option value="accepted">Done</option>
-                        <option value="edited">Edited</option>
-                        <option value="partial">Partial</option>
-                        <option value="skipped">Skipped</option>
-                        <option value="unavailable">Unavailable</option>
-                      </select>
-                    </td>
-                    <td>{visibleRecommendations[index]?.symbol}</td>
-                    <td>
-                      <input
-                        type="number"
-                        value={draft.actualQuantity ?? 0}
-                        onChange={(event) => updateDraft(index, "actualQuantity", Number(event.target.value))}
-                      />
-                    </td>
-                    <td>
-                      <input
-                        type="number"
-                        value={draft.actualPrice ?? 0}
-                        onChange={(event) => updateDraft(index, "actualPrice", Number(event.target.value))}
-                      />
-                    </td>
-                    <td>
-                      <input
-                        type="number"
-                        value={draft.actualFee ?? 1}
-                        onChange={(event) => updateDraft(index, "actualFee", Number(event.target.value))}
-                      />
-                    </td>
-                    <td>
-                      <input value={draft.notes ?? ""} onChange={(event) => updateDraft(index, "notes", event.target.value)} />
-                    </td>
+          <h2>{getInputPanelTitle(inputMode, inputIgnored, progress.inputBatch)}</h2>
+          <label>
+            {inputMode === "ignore" || inputIgnored ? "Ignore reason" : "Advice comment"}
+            <textarea
+              rows={3}
+              disabled={inputMode === "view"}
+              value={adviceNote}
+              onChange={(event) => setAdviceNote(event.target.value)}
+              placeholder={inputMode === "ignore" ? "Optional reason" : "Optional comment about what was actually done"}
+            />
+          </label>
+          {inputMode !== "ignore" && !inputIgnored && (
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Status</th>
+                    <th>Symbol</th>
+                    <th>Qty</th>
+                    <th>Price</th>
+                    <th>Fee</th>
+                    <th>Trade time</th>
+                    <th>Notes</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <button className="primary-button" type="button" onClick={() => void saveConfirmations()}>
-            Save actual trades
-          </button>
+                </thead>
+                <tbody>
+                  {drafts.map((draft, index) => (
+                    <tr key={draft.recommendationId}>
+                      <td>
+                        <select
+                          value={draft.status}
+                          disabled={inputMode === "view"}
+                          onChange={(event) => updateDraft(index, "status", event.target.value)}
+                        >
+                          <option value="accepted">Done</option>
+                          <option value="edited">Edited</option>
+                          <option value="partial">Partial</option>
+                          <option value="skipped">Skipped</option>
+                          <option value="unavailable">Unavailable</option>
+                        </select>
+                      </td>
+                      <td>{visibleRecommendations[index]?.symbol}</td>
+                      <td>
+                        <input
+                          type="number"
+                          disabled={inputMode === "view"}
+                          value={draft.actualQuantity ?? 0}
+                          onChange={(event) => updateDraft(index, "actualQuantity", Number(event.target.value))}
+                        />
+                      </td>
+                      <td>
+                        <input
+                          type="number"
+                          disabled={inputMode === "view"}
+                          value={draft.actualPrice ?? 0}
+                          onChange={(event) => updateDraft(index, "actualPrice", Number(event.target.value))}
+                        />
+                      </td>
+                      <td>
+                        <input
+                          type="number"
+                          disabled={inputMode === "view"}
+                          value={draft.actualFee ?? 1}
+                          onChange={(event) => updateDraft(index, "actualFee", Number(event.target.value))}
+                        />
+                      </td>
+                      <td>
+                        <input
+                          type="datetime-local"
+                          disabled={inputMode === "view"}
+                          value={toDateTimeLocal(draft.actualTradedAt)}
+                          onChange={(event) => updateDraft(index, "actualTradedAt", fromDateTimeLocal(event.target.value))}
+                        />
+                      </td>
+                      <td>
+                        <input
+                          disabled={inputMode === "view"}
+                          value={draft.notes ?? ""}
+                          onChange={(event) => updateDraft(index, "notes", event.target.value)}
+                        />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          {inputMode === "ignore" && (
+            <button className="primary-button" type="button" onClick={() => void saveIgnoredAdvice()}>
+              Save ignored advice
+            </button>
+          )}
+          {inputMode === "edit" && (
+            <button className="primary-button" type="button" onClick={() => void saveConfirmations()}>
+              Save actual trades
+            </button>
+          )}
         </section>
       )}
     </div>
@@ -869,23 +1024,27 @@ function TradesPortfolio({
 
 function TradesSystemEditor({
   settings,
+  candidateAssets,
   onSaved,
   onError
 }: {
   settings: TradeSettings;
+  candidateAssets: TradeCandidateAsset[];
   onSaved: () => Promise<void>;
   onError: (message: string) => void;
 }) {
   const [draft, setDraft] = useState(settings);
+  const [candidateDrafts, setCandidateDrafts] = useState(candidateAssets);
   const [promptText, setPromptText] = useState(settings.prompt_text || "");
   const [promptMode, setPromptMode] = useState<"settings" | "manual">(hasManualPrompt(settings) ? "manual" : "settings");
   const [renderingPrompt, setRenderingPrompt] = useState(false);
 
   useEffect(() => {
     setDraft(settings);
+    setCandidateDrafts(candidateAssets);
     setPromptMode(hasManualPrompt(settings) ? "manual" : "settings");
     setPromptText(settings.prompt_text || "");
-  }, [settings]);
+  }, [candidateAssets, settings]);
 
   useEffect(() => {
     if (promptMode !== "settings") {
@@ -935,6 +1094,7 @@ function TradesSystemEditor({
       } else {
         await saveTradePrompt(promptText, ["manual_prompt"]);
       }
+      await saveTradeCandidates(candidateDrafts);
       await onSaved();
     } catch (err) {
       onError(err instanceof Error ? err.message : "Could not save settings.");
@@ -1037,6 +1197,92 @@ function TradesSystemEditor({
         </div>
         <textarea rows={18} value={promptText} readOnly={promptMode === "settings"} onChange={(event) => setPromptText(event.target.value)} />
       </section>
+      <section className="trades-panel">
+        <div className="panel-heading-row">
+          <div>
+            <h2>Buy candidates</h2>
+            <p>Enabled candidates with a quote or manual price can be sized into concrete buy recommendations.</p>
+          </div>
+          <button className="secondary-button" type="button" onClick={addCandidate}>
+            Add candidate
+          </button>
+        </div>
+        <div className="table-wrap candidate-table">
+          <table>
+            <thead>
+              <tr>
+                <th>On</th>
+                <th>Type</th>
+                <th>Symbol</th>
+                <th>Name</th>
+                <th>Provider symbol</th>
+                <th>TR</th>
+                <th>Manual price</th>
+                <th>Notes</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {candidateDrafts.map((candidate, index) => (
+                <tr key={candidate.id || index}>
+                  <td>
+                    <input
+                      type="checkbox"
+                      checked={Number(candidate.enabled) === 1}
+                      onChange={(event) => updateCandidate(index, "enabled", event.target.checked ? 1 : 0)}
+                    />
+                  </td>
+                  <td>
+                    <select
+                      value={candidate.asset_type}
+                      onChange={(event) => updateCandidate(index, "asset_type", event.target.value as TradeCandidateAsset["asset_type"])}
+                    >
+                      <option value="stock">Stock</option>
+                      <option value="etf">ETF</option>
+                      <option value="crypto">Crypto</option>
+                    </select>
+                  </td>
+                  <td>
+                    <input value={candidate.symbol} onChange={(event) => updateCandidate(index, "symbol", event.target.value.toUpperCase())} />
+                  </td>
+                  <td>
+                    <input value={candidate.name} onChange={(event) => updateCandidate(index, "name", event.target.value)} />
+                  </td>
+                  <td>
+                    <input value={candidate.provider_symbol || ""} onChange={(event) => updateCandidate(index, "provider_symbol", event.target.value)} />
+                  </td>
+                  <td>
+                    <select
+                      value={candidate.trade_republic_availability}
+                      onChange={(event) => updateCandidate(index, "trade_republic_availability", event.target.value)}
+                    >
+                      <option value="confirmed">Confirmed</option>
+                      <option value="likely">Likely</option>
+                      <option value="needs_check">Needs check</option>
+                      <option value="unavailable">Unavailable</option>
+                    </select>
+                  </td>
+                  <td>
+                    <input
+                      type="number"
+                      value={candidate.manual_price ?? ""}
+                      onChange={(event) => updateCandidate(index, "manual_price", event.target.value ? Number(event.target.value) : null)}
+                    />
+                  </td>
+                  <td>
+                    <input value={candidate.notes || ""} onChange={(event) => updateCandidate(index, "notes", event.target.value)} />
+                  </td>
+                  <td>
+                    <button className="secondary-button" type="button" onClick={() => removeCandidate(index)}>
+                      Remove
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
       <button className="primary-button" type="submit">
         <Save size={16} aria-hidden />
         {promptMode === "settings" ? "Save settings" : "Save manual prompt"}
@@ -1046,6 +1292,41 @@ function TradesSystemEditor({
 
   function setDraftField<K extends keyof TradeSettings>(key: K, value: TradeSettings[K]) {
     setDraft((current) => ({ ...current, [key]: value }));
+  }
+
+  function addCandidate() {
+    setCandidateDrafts((current) => [
+      ...current,
+      {
+        id: crypto.randomUUID(),
+        portfolio_id: settings.portfolio_id,
+        enabled: 1,
+        asset_type: "stock",
+        symbol: "",
+        name: "",
+        isin: null,
+        provider: "stooq",
+        provider_symbol: "",
+        trade_republic_availability: "needs_check",
+        source: "manual",
+        manual_price: null,
+        price_currency: "EUR",
+        manual_price_updated_at: null,
+        notes: "",
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      }
+    ]);
+  }
+
+  function updateCandidate<K extends keyof TradeCandidateAsset>(index: number, key: K, value: TradeCandidateAsset[K]) {
+    setCandidateDrafts((current) =>
+      current.map((candidate, candidateIndex) => (candidateIndex === index ? { ...candidate, [key]: value } : candidate))
+    );
+  }
+
+  function removeCandidate(index: number) {
+    setCandidateDrafts((current) => current.filter((_, candidateIndex) => candidateIndex !== index));
   }
 }
 
@@ -1182,16 +1463,78 @@ function Metric({ label, value }: { label: string; value: string }) {
   );
 }
 
-function recommendationToDraft(rec: TradeRecommendation) {
+function recommendationToDraft(rec: TradeRecommendation, inputTransactions: TradeTransaction[] = []) {
+  const input = inputTransactions.find((transaction) => transaction.recommendation_id === rec.id);
   return {
     recommendationId: rec.id,
-    status: rec.action === "buy" || rec.action === "sell" ? "accepted" : "skipped",
-    actualQuantity: rec.suggested_quantity ?? 0,
-    actualPrice: rec.suggested_price ?? 0,
-    actualFee: rec.suggested_fee ?? 1,
-    actualCurrency: rec.price_currency || "EUR",
-    notes: ""
+    status: input ? "accepted" : rec.status && rec.status !== "pending" ? rec.status : rec.action === "buy" || rec.action === "sell" ? "accepted" : "skipped",
+    actualQuantity: input?.quantity ?? rec.suggested_quantity ?? 0,
+    actualPrice: input?.price ?? rec.suggested_price ?? 0,
+    actualFee: input?.fee ?? rec.suggested_fee ?? 1,
+    actualCurrency: input?.currency || rec.price_currency || "EUR",
+    actualTradedAt: input?.traded_at || new Date().toISOString(),
+    notes: input?.notes || ""
   };
+}
+
+function getInputButtonLabel(
+  run: AdviceRun,
+  inputBatch: { id: string; status: string; submitted_at: string; updated_at: string; notes: string | null } | null
+): "Input actual trades" | "Edit input" | "View input" | "View ignored" | "No input" {
+  const status = inputBatch?.status || run.input_status || "";
+  if (status === "ignored") {
+    return "View ignored";
+  }
+  const hasInput = Boolean(inputBatch || run.input_batch_id);
+  const hasNewerInput = Number(run.has_newer_input || 0) === 1;
+  if (hasInput && hasNewerInput) {
+    return "View input";
+  }
+  if (hasInput) {
+    return "Edit input";
+  }
+  if (hasNewerInput) {
+    return "No input";
+  }
+  return "Input actual trades";
+}
+
+function getInputPanelTitle(
+  inputMode: "edit" | "view" | "ignore",
+  inputIgnored: boolean,
+  inputBatch: { id: string; status: string; submitted_at: string; updated_at: string; notes: string | null } | null
+): string {
+  if (inputMode === "ignore") {
+    return "Ignore advice";
+  }
+  if (inputIgnored) {
+    return "Ignored advice";
+  }
+  if (inputMode === "view") {
+    return "View input";
+  }
+  return inputBatch ? "Edit input" : "Input actual trades";
+}
+
+function toDateTimeLocal(value: string | undefined): string {
+  if (!value) {
+    return "";
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+  const offset = date.getTimezoneOffset();
+  const local = new Date(date.getTime() - offset * 60 * 1000);
+  return local.toISOString().slice(0, 16);
+}
+
+function fromDateTimeLocal(value: string): string {
+  if (!value) {
+    return new Date().toISOString();
+  }
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? new Date().toISOString() : date.toISOString();
 }
 
 function normalizeSection(section: string): TradesSection {

@@ -9,6 +9,7 @@ interface Confirmation {
   actualPrice?: number;
   actualFee?: number;
   actualCurrency?: string;
+  actualTradedAt?: string;
   notes?: string;
 }
 
@@ -18,9 +19,82 @@ export const onRequestPost = async ({ env, request, params }: FunctionContext<{ 
     return session;
   }
   const adviceRunId = params.id;
-  const body = await readJson<{ confirmations?: Confirmation[] }>(request);
+  const body = await readJson<{ confirmations?: Confirmation[]; notes?: string }>(request);
   const confirmations = Array.isArray(body.confirmations) ? body.confirmations : [];
+  const batchNotes = cleanText(body.notes);
   const createdTransactions: string[] = [];
+  const now = new Date().toISOString();
+
+  const adviceRun = await env.DB.prepare("SELECT id, started_at FROM trade_advice_runs WHERE id = ? AND portfolio_id = ?")
+    .bind(adviceRunId, session.portfolioId)
+    .first<{ id: string; started_at: string }>();
+  if (!adviceRun) {
+    return errorResponse(404, "advice_run_not_found", "Advice run not found.");
+  }
+
+  const newerInput = await env.DB.prepare(
+    `SELECT 1
+     FROM trade_advice_input_batches batch
+     JOIN trade_advice_runs run ON run.id = batch.advice_run_id
+     WHERE batch.portfolio_id = ?
+       AND batch.status IN ('submitted', 'ignored')
+       AND datetime(run.started_at) > datetime(?)
+     LIMIT 1`
+  )
+    .bind(session.portfolioId, adviceRun.started_at)
+    .first();
+  if (newerInput) {
+    return errorResponse(409, "advice_input_locked", "This advice has a newer submitted input and can only be viewed.");
+  }
+
+  const existingBatch = await env.DB.prepare(
+    "SELECT id FROM trade_advice_input_batches WHERE portfolio_id = ? AND advice_run_id = ? LIMIT 1"
+  )
+    .bind(session.portfolioId, adviceRunId)
+    .first<{ id: string }>();
+  const batchId = existingBatch?.id || crypto.randomUUID();
+
+  if (existingBatch) {
+    const oldTransactions = await env.DB.prepare(
+      "SELECT * FROM trade_transactions WHERE portfolio_id = ? AND advice_input_batch_id = ?"
+    )
+      .bind(session.portfolioId, batchId)
+      .all<{
+        type: string;
+        asset_type: string | null;
+        symbol: string | null;
+        name: string | null;
+        isin: string | null;
+        quantity: number | null;
+        gross_amount: number | null;
+        currency: string;
+      }>();
+    for (const transaction of oldTransactions.results ?? []) {
+      if ((transaction.type === "buy" || transaction.type === "sell") && transaction.symbol && transaction.quantity) {
+        await applyConfirmedTradeToPosition(env, session.portfolioId, {
+          action: transaction.type === "buy" ? "sell" : "buy",
+          assetType: transaction.asset_type || "stock",
+          symbol: transaction.symbol,
+          name: transaction.name || transaction.symbol,
+          isin: transaction.isin || null,
+          quantity: transaction.quantity,
+          gross: Number(transaction.gross_amount || 0),
+          currency: transaction.currency || "EUR"
+        });
+      }
+    }
+    await env.DB.prepare("DELETE FROM trade_transactions WHERE portfolio_id = ? AND advice_input_batch_id = ?")
+      .bind(session.portfolioId, batchId)
+      .run();
+  }
+
+  await env.DB.prepare(
+    `INSERT INTO trade_advice_input_batches (id, portfolio_id, advice_run_id, status, submitted_at, updated_at, notes)
+     VALUES (?, ?, ?, 'submitted', ?, ?, ?)
+     ON CONFLICT(advice_run_id) DO UPDATE SET status = 'submitted', updated_at = excluded.updated_at, notes = excluded.notes`
+  )
+    .bind(batchId, session.portfolioId, adviceRunId, now, now, batchNotes)
+    .run();
 
   for (const confirmation of confirmations) {
     const recommendation = await env.DB.prepare(
@@ -71,15 +145,16 @@ export const onRequestPost = async ({ env, request, params }: FunctionContext<{ 
       const transactionId = crypto.randomUUID();
       await env.DB.prepare(
         `INSERT INTO trade_transactions (
-           id, portfolio_id, recommendation_id, type, asset_type, symbol, name, isin, quantity,
+           id, portfolio_id, recommendation_id, advice_input_batch_id, type, asset_type, symbol, name, isin, quantity,
            price, gross_amount, fee, currency, cash_effect, notes, traded_at, created_at
          )
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`
       )
         .bind(
           transactionId,
           session.portfolioId,
           recommendation.id,
+          batchId,
           recommendation.action,
           recommendation.asset_type,
           recommendation.symbol,
@@ -92,7 +167,7 @@ export const onRequestPost = async ({ env, request, params }: FunctionContext<{ 
           confirmation.actualCurrency || recommendation.price_currency || "EUR",
           cashEffect,
           confirmation.notes || null,
-          new Date().toISOString()
+          cleanTimestamp(confirmation.actualTradedAt) || now
         )
         .run();
       createdTransactions.push(transactionId);
@@ -119,6 +194,7 @@ export const onRequestPost = async ({ env, request, params }: FunctionContext<{ 
   }
 
   await recalculateCashFromTransactions(env, session.portfolioId);
+  await markOlderUninteractedAdviceIgnored(env, session.portfolioId, adviceRun.started_at, now);
   return jsonResponse({ ok: true, createdTransactions });
 };
 
@@ -181,5 +257,61 @@ async function applyConfirmedTradeToPosition(
       nextQuantity > 0 ? trade.gross / nextQuantity : null,
       trade.currency
     )
+    .run();
+}
+
+function cleanTimestamp(value: string | undefined): string | null {
+  if (!value) {
+    return null;
+  }
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) ? new Date(timestamp).toISOString() : null;
+}
+
+function cleanText(value: unknown): string | null {
+  const text = String(value || "").trim();
+  return text ? text.slice(0, 2000) : null;
+}
+
+async function markOlderUninteractedAdviceIgnored(
+  env: { DB: D1Database },
+  portfolioId: string,
+  beforeStartedAt: string,
+  now: string
+): Promise<void> {
+  await env.DB.prepare(
+    `INSERT INTO trade_advice_input_batches (id, portfolio_id, advice_run_id, status, submitted_at, updated_at, notes)
+     SELECT 'ignored-' || r.id,
+            r.portfolio_id,
+            r.id,
+            'ignored',
+            ?,
+            ?,
+            'Automatically ignored because a newer advice was acted on.'
+     FROM trade_advice_runs r
+     LEFT JOIN trade_advice_input_batches b ON b.advice_run_id = r.id
+     WHERE r.portfolio_id = ?
+       AND r.status = 'success'
+       AND datetime(r.started_at) < datetime(?)
+       AND b.id IS NULL`
+  )
+    .bind(now, now, portfolioId, beforeStartedAt)
+    .run();
+
+  await env.DB.prepare(
+    `UPDATE trade_recommendations
+     SET status = 'skipped', updated_at = datetime('now')
+     WHERE portfolio_id = ?
+       AND status = 'pending'
+       AND advice_run_id IN (
+         SELECT r.id
+         FROM trade_advice_runs r
+         JOIN trade_advice_input_batches b ON b.advice_run_id = r.id
+         WHERE r.portfolio_id = ?
+           AND b.status = 'ignored'
+           AND datetime(r.started_at) < datetime(?)
+       )`
+  )
+    .bind(portfolioId, portfolioId, beforeStartedAt)
     .run();
 }

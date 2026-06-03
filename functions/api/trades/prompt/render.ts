@@ -25,7 +25,7 @@ export const onRequestPost = async ({ env, request }: FunctionContext) => {
   const current = await loadTradeSettings(env, session.portfolioId);
   const body = await readOptionalJson<{ settings?: Partial<PromptSettings> }>(request);
   const settings = { ...current, ...(body.settings || {}) } as PromptSettings;
-  const [positions, cash, previousAdvice, unavailableAssets] = await Promise.all([
+  const [positions, cash, previousAdvice, previousTransactions, unavailableAssets] = await Promise.all([
     env.DB.prepare(
       `SELECT asset_type, symbol, name, isin, quantity, current_value, currency, provider, provider_symbol, updated_at
        FROM trade_positions
@@ -38,14 +38,29 @@ export const onRequestPost = async ({ env, request }: FunctionContext) => {
       .bind(session.portfolioId)
       .all(),
     env.DB.prepare(
-      `SELECT id, run_date, status, summary, output_json
-       FROM trade_advice_runs
-       WHERE portfolio_id = ?
-       ORDER BY started_at DESC
+      `SELECT r.id, r.run_date, r.status, r.summary, r.output_json,
+              b.status AS input_status,
+              b.notes AS input_notes,
+              b.submitted_at AS input_submitted_at
+       FROM trade_advice_runs r
+       LEFT JOIN trade_advice_input_batches b ON b.advice_run_id = r.id
+      WHERE r.portfolio_id = ?
+       ORDER BY r.started_at DESC
        LIMIT 5`
     )
       .bind(session.portfolioId)
-      .all(),
+      .all<{ id: string } & Record<string, unknown>>(),
+    env.DB.prepare(
+      `SELECT b.advice_run_id, t.type, t.symbol, t.quantity, t.price, t.fee,
+              t.cash_effect, t.notes, t.traded_at
+       FROM trade_transactions t
+       JOIN trade_advice_input_batches b ON b.id = t.advice_input_batch_id
+      WHERE t.portfolio_id = ?
+       ORDER BY t.traded_at DESC
+       LIMIT 30`
+    )
+      .bind(session.portfolioId)
+      .all<{ advice_run_id: string } & Record<string, unknown>>(),
     env.DB.prepare("SELECT asset_type, symbol, name, reason FROM trade_unavailable_assets WHERE portfolio_id = ? ORDER BY symbol")
       .bind(session.portfolioId)
       .all()
@@ -61,7 +76,12 @@ export const onRequestPost = async ({ env, request }: FunctionContext) => {
         holdings: positions.results ?? [],
         note: "Quote refresh and market-value recalculation happen again at advice-run time."
       },
-      previousAdvice: previousAdvice.results ?? [],
+      previousAdvice: (previousAdvice.results ?? []).map((row) => ({
+        ...row,
+        actual_transactions: (previousTransactions.results ?? []).filter(
+          (transaction) => transaction.advice_run_id === row.id
+        )
+      })),
       unavailableAssets: unavailableAssets.results ?? []
     })
   });
@@ -105,9 +125,7 @@ function buildPromptBlocks(settings: PromptSettings) {
     [
       "fractional.increment",
       "Fractional shares",
-      Number(settings.fractional_enabled) === 1
-        ? `Stock and ETF quantities should respect a ${settings.fractional_increment} share increment. Crypto may use practical fractional amounts.`
-        : "Use whole-share quantities for stocks and ETFs. Crypto may use practical fractional amounts."
+      buildFractionalText(settings)
     ],
     [
       "risk.profile",
@@ -135,6 +153,39 @@ function buildPromptBlocks(settings: PromptSettings) {
     current_text,
     state: "active"
   }));
+}
+
+function buildFractionalText(settings: PromptSettings): string {
+  const enabledFractionalAssets = [
+    Number(settings.stocks_enabled) === 1 ? "stock" : "",
+    Number(settings.etfs_enabled) === 1 ? "ETF" : ""
+  ].filter(Boolean);
+  const cryptoEnabled = Number(settings.crypto_enabled) === 1;
+
+  if (Number(settings.fractional_enabled) !== 1) {
+    if (enabledFractionalAssets.length === 0) {
+      return cryptoEnabled ? "Crypto may use practical fractional amounts." : "No fractional stock or ETF trading is enabled.";
+    }
+    return `Use whole-share quantities for ${joinAssetWords(enabledFractionalAssets)}. ${
+      cryptoEnabled ? "Crypto may use practical fractional amounts." : ""
+    }`.trim();
+  }
+
+  if (enabledFractionalAssets.length === 0) {
+    return cryptoEnabled ? "Crypto may use practical fractional amounts." : "No stock or ETF fractional-share rule is needed.";
+  }
+
+  return `${capitalize(joinAssetWords(enabledFractionalAssets))} quantities should respect a ${
+    settings.fractional_increment
+  } share increment. ${cryptoEnabled ? "Crypto may use practical fractional amounts." : ""}`.trim();
+}
+
+function joinAssetWords(values: string[]): string {
+  return values.length <= 1 ? values.join("") : `${values.slice(0, -1).join(", ")} and ${values[values.length - 1]}`;
+}
+
+function capitalize(value: string): string {
+  return value ? value[0].toUpperCase() + value.slice(1) : value;
 }
 
 function buildPromptPreview(

@@ -32,7 +32,15 @@ export const onRequestGet = async ({ env, request }: FunctionContext) => {
   )
     .bind(session.portfolioId)
     .all();
-  return jsonResponse({ settings, unavailableAssets: unavailable.results ?? [] });
+  const candidates = await env.DB.prepare(
+    `SELECT *
+     FROM trade_candidate_assets
+     WHERE portfolio_id = ?
+     ORDER BY enabled DESC, asset_type, symbol`
+  )
+    .bind(session.portfolioId)
+    .all();
+  return jsonResponse({ settings, unavailableAssets: unavailable.results ?? [], candidateAssets: candidates.results ?? [] });
 };
 
 export const onRequestPost = async ({ env, request }: FunctionContext) => {

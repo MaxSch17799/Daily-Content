@@ -1,12 +1,18 @@
 export function buildNewsPrompt({
   date,
   positions,
+  candidates = [],
   searchMode
 }: {
   date: string;
   positions: Array<{ symbol: string; name: string; asset_type: string }>;
+  candidates?: Array<{ symbol: string; name: string; asset_type: string }>;
   searchMode: string;
 }): string {
+  const trackedAssets = [
+    ...positions.map((position) => ({ label: "holding", ...position })),
+    ...candidates.map((candidate) => ({ label: "candidate", ...candidate }))
+  ];
   return [
     "Prepare a concise pre-market research brief for a personal Trade Republic portfolio.",
     `Date: ${date}`,
@@ -14,8 +20,10 @@ export function buildNewsPrompt({
     `Search mode: ${searchMode}`,
     "",
     "Search recent reliable sources from the last 48 hours.",
-    "Focus on broad Europe/US market context, macro events, and news for these holdings:",
-    ...positions.map((position) => `- ${position.name} (${position.symbol}, ${position.asset_type})`),
+    "Focus on broad Europe/US market context, macro events, current holdings, and enabled buy candidates:",
+    ...(trackedAssets.length > 0
+      ? trackedAssets.map((asset) => `- ${asset.name} (${asset.symbol}, ${asset.asset_type}, ${asset.label})`)
+      : ["- No holdings or candidates were provided; return broad market context only."]),
     "",
     "Avoid forums, rumors, and promotional stock-picking pages.",
     "Return a compact brief with source titles/URLs. Do not make trade recommendations yet."
@@ -35,6 +43,9 @@ export function buildAdvicePrompt(input: {
     instructionPrompt,
     "",
     "Use this data only. Do not invent prices, holdings, cash, or Trade Republic availability.",
+    "Enabled buy candidates are in snapshot.candidate_assets. Current holdings are in snapshot.holdings.",
+    "If snapshot.candidate_assets contains a candidate with quote.price, you may recommend a buy and must calculate quantity from available cash, quote.price, the fraction rules, and the 1 EUR fee.",
+    "If no quote.price or manual price is present for a buy candidate, do not create a buy. Use watch and explain that a Trade Republic quote/manual price is needed.",
     "If a buy or sell is recommended, the quantity must be concrete and executable from the cash/sell plan.",
     "For buy and sell recommendations, quantity, estimated_price, estimated_gross_amount, estimated_fee, estimated_cash_effect, reason, cash_math, and sources must be filled.",
     "For hold/watch recommendations, use quantity 0, gross amount 0, fee 0, and cash effect 0.",
@@ -99,9 +110,7 @@ export function buildSettingsInstructionPrompt(settings: TradePromptSettings): s
     `Default minimum trade size is ${settings.min_trade_value} EUR. For buy/sell actions, give a concrete quantity, estimated price, gross amount, 1 EUR fee, and total cash effect.`,
     "",
     "Fractional shares",
-    Number(settings.fractional_enabled) === 1
-      ? `Stock and ETF quantities should respect a ${settings.fractional_increment} share increment. Crypto may use practical fractional amounts.`
-      : "Use whole-share quantities for stocks and ETFs. Crypto may use practical fractional amounts.",
+    buildFractionalText(settings),
     "",
     "Risk profile",
     `Risk profile: ${settings.risk_profile}. Keep the number, size, and risk of trades consistent with this profile.`,
@@ -112,4 +121,37 @@ export function buildSettingsInstructionPrompt(settings: TradePromptSettings): s
     "Output format",
     "Return only valid JSON matching the configured schema. Every buy or sell recommendation must include quantity, estimated_price, estimated_gross_amount, estimated_fee, estimated_cash_effect, reason, cash_math, and at least one source object when news or web context influenced the recommendation."
   ].join("\n");
+}
+
+function buildFractionalText(settings: TradePromptSettings): string {
+  const enabledFractionalAssets = [
+    Number(settings.stocks_enabled) === 1 ? "stock" : "",
+    Number(settings.etfs_enabled) === 1 ? "ETF" : ""
+  ].filter(Boolean);
+  const cryptoEnabled = Number(settings.crypto_enabled) === 1;
+
+  if (Number(settings.fractional_enabled) !== 1) {
+    if (enabledFractionalAssets.length === 0) {
+      return cryptoEnabled ? "Crypto may use practical fractional amounts." : "No fractional stock or ETF trading is enabled.";
+    }
+    return `Use whole-share quantities for ${joinAssetWords(enabledFractionalAssets)}. ${
+      cryptoEnabled ? "Crypto may use practical fractional amounts." : ""
+    }`.trim();
+  }
+
+  if (enabledFractionalAssets.length === 0) {
+    return cryptoEnabled ? "Crypto may use practical fractional amounts." : "No stock or ETF fractional-share rule is needed.";
+  }
+
+  return `${capitalize(joinAssetWords(enabledFractionalAssets))} quantities should respect a ${
+    settings.fractional_increment
+  } share increment. ${cryptoEnabled ? "Crypto may use practical fractional amounts." : ""}`.trim();
+}
+
+function joinAssetWords(values: string[]): string {
+  return values.length <= 1 ? values.join("") : `${values.slice(0, -1).join(", ")} and ${values[values.length - 1]}`;
+}
+
+function capitalize(value: string): string {
+  return value ? value[0].toUpperCase() + value.slice(1) : value;
 }

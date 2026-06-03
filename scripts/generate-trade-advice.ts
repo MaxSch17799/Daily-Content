@@ -25,6 +25,7 @@ interface TradeSettings {
   benchmark_symbol: string;
   benchmark_name: string;
   prompt_text: string;
+  overridden_settings_json: string;
 }
 
 interface PositionRow {
@@ -42,6 +43,21 @@ interface PositionRow {
 interface CashRow {
   currency: string;
   amount: number;
+}
+
+interface CandidateAssetRow {
+  id: string;
+  enabled: number;
+  asset_type: string;
+  symbol: string;
+  name: string;
+  isin: string | null;
+  provider: string | null;
+  provider_symbol: string | null;
+  trade_republic_availability: string;
+  manual_price: number | null;
+  price_currency: string;
+  notes: string | null;
 }
 
 async function main() {
@@ -108,9 +124,34 @@ async function main() {
     ).results;
     const cash = (await d1.query<CashRow>("SELECT currency, amount FROM trade_cash_balances WHERE portfolio_id = ?", [portfolioId]))
       .results;
+    const candidates = (
+      await d1.query<CandidateAssetRow>(
+        `SELECT *
+         FROM trade_candidate_assets
+         WHERE portfolio_id = ? AND enabled = 1
+         ORDER BY asset_type, symbol`,
+        [portfolioId]
+      )
+    ).results.filter((candidate) => assetTypeEnabled(settings, candidate.asset_type));
     await setRunProgress("Refreshing quote data for the current portfolio.");
-    const quotes = await refreshQuotes({ d1, portfolioId, positions });
-    const snapshot = buildSnapshot({ positions, cash, quotes });
+    const quotes = await refreshQuotes({
+      d1,
+      portfolioId,
+      positions: [
+        ...positions,
+        ...candidates.map((candidate) => ({
+          asset_type: candidate.asset_type,
+          symbol: candidate.symbol,
+          provider_symbol: candidate.provider_symbol,
+          quantity: null,
+          current_value: null,
+          currency: candidate.price_currency || "EUR",
+          manual_price: candidate.manual_price,
+          price_currency: candidate.price_currency
+        }))
+      ]
+    });
+    const snapshot = buildSnapshot({ positions, cash, quotes, candidates });
     const snapshotId = randomUUID();
     await d1.query(
       `INSERT INTO trade_portfolio_snapshots (
@@ -130,7 +171,7 @@ async function main() {
     );
 
     await setRunProgress("Preparing web/news context prompt.");
-    const newsPrompt = buildNewsPrompt({ date: runDate, positions, searchMode: settings.web_search_mode });
+    const newsPrompt = buildNewsPrompt({ date: runDate, positions, candidates, searchMode: settings.web_search_mode });
     newsLogId = await startAiCall({
       d1,
       portfolioId,
@@ -138,7 +179,11 @@ async function main() {
       callType: "web_context",
       model,
       promptText: newsPrompt,
-      input: { settings, positions: positions.map((position) => position.symbol) }
+      input: {
+        settings,
+        positions: positions.map((position) => position.symbol),
+        candidates: candidates.map((candidate) => candidate.symbol)
+      }
     });
     newsLogRunning = true;
     await setRunProgress(
@@ -181,14 +226,51 @@ async function main() {
     );
 
     await setRunProgress("Loading previous advice and unavailable asset history.");
-    const previousAdvice = await d1.query(
-      `SELECT id, run_date, summary, output_json
-       FROM trade_advice_runs
-       WHERE portfolio_id = ? AND id <> ?
-       ORDER BY started_at DESC
+    const previousAdvice = await d1.query<{
+      id: string;
+      run_date: string;
+      summary: string | null;
+      output_json: string;
+      input_status: string | null;
+      input_notes: string | null;
+      input_submitted_at: string | null;
+    }>(
+      `SELECT r.id, r.run_date, r.summary, r.output_json,
+              b.status AS input_status,
+              b.notes AS input_notes,
+              b.submitted_at AS input_submitted_at
+       FROM trade_advice_runs r
+       LEFT JOIN trade_advice_input_batches b ON b.advice_run_id = r.id
+       WHERE r.portfolio_id = ? AND r.id <> ?
+       ORDER BY r.started_at DESC
        LIMIT 10`,
       [portfolioId, runId]
     );
+    const previousTransactions = await d1.query<{
+      advice_run_id: string;
+      type: string;
+      symbol: string | null;
+      quantity: number | null;
+      price: number | null;
+      fee: number;
+      cash_effect: number;
+      notes: string | null;
+      traded_at: string;
+    }>(
+      `SELECT b.advice_run_id, t.type, t.symbol, t.quantity, t.price, t.fee,
+              t.cash_effect, t.notes, t.traded_at
+       FROM trade_transactions t
+       JOIN trade_advice_input_batches b ON b.id = t.advice_input_batch_id
+       JOIN trade_advice_runs r ON r.id = b.advice_run_id
+       WHERE t.portfolio_id = ? AND r.id <> ?
+       ORDER BY t.traded_at DESC
+       LIMIT 50`,
+      [portfolioId, runId]
+    );
+    const previousAdviceForPrompt = previousAdvice.results.map((row) => ({
+      ...row,
+      actual_transactions: previousTransactions.results.filter((transaction) => transaction.advice_run_id === row.id)
+    }));
     const unavailable = await d1.query("SELECT asset_type, symbol, name, reason FROM trade_unavailable_assets WHERE portfolio_id = ?", [
       portfolioId
     ]);
@@ -197,9 +279,9 @@ async function main() {
       settings,
       snapshot,
       newsSummary: news.parsed.summary,
-      previousAdvice: previousAdvice.results,
+      previousAdvice: previousAdviceForPrompt,
       unavailableAssets: unavailable.results,
-      promptText: settings.prompt_text
+      promptText: manualPromptEnabled(settings) ? settings.prompt_text : ""
     });
 
     adviceLogId = await startAiCall({
@@ -209,7 +291,7 @@ async function main() {
       callType: "advice_json",
       model,
       promptText: advicePrompt,
-      input: { snapshot, settings }
+      input: { snapshot, settings, manualPrompt: manualPromptEnabled(settings) }
     });
     adviceLogRunning = true;
     await setRunProgress("Waiting for OpenAI structured buy/sell recommendation JSON.");
@@ -356,11 +438,13 @@ async function main() {
 function buildSnapshot({
   positions,
   cash,
-  quotes
+  quotes,
+  candidates
 }: {
   positions: PositionRow[];
   cash: CashRow[];
   quotes: Array<{ symbol: string; price: number; currency: string; marketTime: string | null; provider: string }>;
+  candidates: CandidateAssetRow[];
 }) {
   const cashValue = cash.reduce((sum, row) => sum + Number(row.amount || 0), 0);
   const holdings = positions.map((position) => {
@@ -381,11 +465,44 @@ function buildSnapshot({
   return {
     cash,
     holdings,
+    candidate_assets: candidates.map((candidate) => {
+      const quote = quotes.find((quoteCandidate) => quoteCandidate.symbol === candidate.symbol);
+      return {
+        asset_type: candidate.asset_type,
+        symbol: candidate.symbol,
+        name: candidate.name,
+        isin: candidate.isin,
+        provider: candidate.provider,
+        provider_symbol: candidate.provider_symbol,
+        trade_republic_availability: candidate.trade_republic_availability,
+        quote: quote || null,
+        notes: candidate.notes
+      };
+    }),
     cashValue,
     holdingsValue,
     totalValue,
     createdAt: new Date().toISOString()
   };
+}
+
+function assetTypeEnabled(settings: TradeSettings, assetType: string): boolean {
+  if (assetType === "crypto") {
+    return settings.crypto_enabled === 1;
+  }
+  if (assetType === "etf") {
+    return settings.etfs_enabled === 1;
+  }
+  return settings.stocks_enabled === 1;
+}
+
+function manualPromptEnabled(settings: TradeSettings): boolean {
+  try {
+    const parsed = JSON.parse(settings.overridden_settings_json || "[]");
+    return Array.isArray(parsed) && parsed.includes("manual_prompt") && settings.prompt_text.trim().length > 0;
+  } catch {
+    return false;
+  }
 }
 
 function isWeekend(timeZone: string): boolean {

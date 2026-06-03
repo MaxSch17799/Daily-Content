@@ -25,10 +25,10 @@ export const onRequestGet = async ({ env, request }: FunctionContext) => {
         .first<{ id: string } & Record<string, unknown>>();
 
   if (!run) {
-    return jsonResponse({ run: null, logs: [], recommendations: [] });
+    return jsonResponse({ run: null, logs: [], recommendations: [], inputBatch: null, inputTransactions: [] });
   }
 
-  const [logs, recommendations] = await Promise.all([
+  const [logs, recommendations, inputBatch] = await Promise.all([
     env.DB.prepare(
       `SELECT id, advice_run_id, call_type, model, status, prompt_text, raw_response_json,
               parsed_output_json, validation_error, input_tokens, output_tokens,
@@ -46,12 +46,32 @@ export const onRequestGet = async ({ env, request }: FunctionContext) => {
        ORDER BY created_at, id`
     )
       .bind(session.portfolioId, run.id)
-      .all()
+      .all(),
+    env.DB.prepare(
+      `SELECT *
+       FROM trade_advice_input_batches
+       WHERE portfolio_id = ? AND advice_run_id = ?
+       LIMIT 1`
+    )
+      .bind(session.portfolioId, run.id)
+      .first<{ id: string; status: string; submitted_at: string; updated_at: string; notes: string | null }>()
   ]);
+  const inputTransactions = inputBatch
+    ? await env.DB.prepare(
+        `SELECT *
+         FROM trade_transactions
+         WHERE portfolio_id = ? AND advice_input_batch_id = ?
+         ORDER BY traded_at, created_at`
+      )
+        .bind(session.portfolioId, inputBatch.id)
+        .all()
+    : { results: [] };
 
   return jsonResponse({
     run,
     logs: logs.results ?? [],
-    recommendations: recommendations.results ?? []
+    recommendations: recommendations.results ?? [],
+    inputBatch,
+    inputTransactions: inputTransactions.results ?? []
   });
 };

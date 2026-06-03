@@ -9,9 +9,11 @@ export interface PositionInput {
   asset_type: string;
   symbol: string;
   provider_symbol?: string | null;
-  quantity: number;
+  quantity?: number | null;
   current_value?: number | null;
   currency: string;
+  manual_price?: number | null;
+  price_currency?: string | null;
 }
 
 export async function refreshQuotes({
@@ -40,7 +42,8 @@ export async function refreshQuotes({
     if (!quote) {
       continue;
     }
-    quotes.push(quote);
+    const normalizedQuote = { ...quote, symbol: position.symbol, assetType: position.asset_type };
+    quotes.push(normalizedQuote);
     await d1.query(
       `INSERT INTO trade_market_quotes (
          id, symbol, provider, provider_symbol, asset_type, price, currency, market_time, fetched_at, stale, raw_json
@@ -49,15 +52,15 @@ export async function refreshQuotes({
       [
         randomUUID(),
         position.symbol,
-        quote.provider,
-        quote.providerSymbol,
+        normalizedQuote.provider,
+        normalizedQuote.providerSymbol,
         position.asset_type,
-        quote.price,
-        quote.currency,
-        quote.marketTime,
+        normalizedQuote.price,
+        normalizedQuote.currency,
+        normalizedQuote.marketTime,
         new Date().toISOString(),
-        isStale(quote.marketTime) ? 1 : 0,
-        JSON.stringify(quote.raw)
+        isStale(normalizedQuote.marketTime) ? 1 : 0,
+        JSON.stringify(normalizedQuote.raw)
       ]
     );
   }
@@ -65,6 +68,18 @@ export async function refreshQuotes({
 }
 
 function fallbackQuote(position: PositionInput): QuoteResult | null {
+  if (position.manual_price && position.manual_price > 0) {
+    return {
+      symbol: position.symbol,
+      provider: "manual",
+      providerSymbol: position.provider_symbol || position.symbol,
+      assetType: position.asset_type,
+      price: position.manual_price,
+      currency: position.price_currency || position.currency || "EUR",
+      marketTime: null,
+      raw: { source: "manual_candidate_price" }
+    };
+  }
   if (!position.current_value || !position.quantity) {
     return null;
   }
