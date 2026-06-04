@@ -15,10 +15,6 @@ on:
         description: Existing D1 run id for UI progress tracking
         required: false
         default: ""
-      advice_mode:
-        description: Advice mode: normal or deploy_all_cash
-        required: false
-        default: "normal"
   schedule:
     - cron: "0 5 * * 1-5"
     - cron: "0 6 * * 1-5"
@@ -69,5 +65,4 @@ jobs:
           COINGECKO_API_KEY: ${{ secrets.COINGECKO_API_KEY }}
           TRADES_DEFAULT_PORTFOLIO_ID: ${{ github.event.inputs.portfolio_id || 'max' }}
           TRADES_RUN_ID: ${{ github.event.inputs.run_id || '' }}
-          TRADES_ADVICE_MODE: ${{ github.event.inputs.advice_mode || 'normal' }}
           FORCE_GENERATE: ${{ github.event.inputs.force || 'false' }}

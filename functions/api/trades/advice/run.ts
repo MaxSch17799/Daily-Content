@@ -64,8 +64,7 @@ export const onRequestPost = async ({ env, request }: FunctionContext) => {
         inputs: {
           force: "true",
           portfolio_id: session.portfolioId,
-          run_id: runId,
-          advice_mode: adviceMode
+          run_id: runId
         }
       })
     }
