@@ -31,8 +31,25 @@ export async function fetchStooqQuote(symbol: string, assetType: string): Promis
     providerSymbol: returnedSymbol || providerSymbol,
     assetType,
     price,
-    currency: "EUR",
+    currency: inferCurrency(returnedSymbol || providerSymbol),
     marketTime: date && time ? `${date}T${time}` : date || null,
     raw: { csv: row }
   };
+}
+
+function inferCurrency(providerSymbol: string): string {
+  const symbol = providerSymbol.toUpperCase();
+  if (symbol.endsWith(".US")) {
+    return "USD";
+  }
+  if (symbol.endsWith(".UK") || symbol.endsWith(".L")) {
+    return "GBP";
+  }
+  if (symbol.endsWith(".CH")) {
+    return "CHF";
+  }
+  if (symbol.endsWith(".JP")) {
+    return "JPY";
+  }
+  return "EUR";
 }

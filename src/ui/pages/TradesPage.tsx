@@ -947,8 +947,13 @@ function buildAdviceSteps(
       state: webDone ? "done" : hasWebPrompt ? "active" : "pending"
     },
     {
+      label: "Quote ideas",
+      description: "Extract tickers from the web brief and fetch free public quotes for possible buys.",
+      state: hasAdvicePrompt ? "done" : webDone ? "active" : "pending"
+    },
+    {
       label: "Prompt",
-      description: "Build the structured recommendation prompt with settings, cash, history, and unavailable assets.",
+      description: "Build the structured recommendation prompt with settings, cash, discovered quotes, history, and unavailable assets.",
       state: hasAdvicePrompt ? "done" : webDone ? "active" : "pending"
     },
     {

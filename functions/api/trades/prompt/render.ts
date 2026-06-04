@@ -74,7 +74,9 @@ export const onRequestPost = async ({ env, request }: FunctionContext) => {
       snapshot: {
         cash: cash.results ?? [],
         holdings: positions.results ?? [],
-        note: "Quote refresh and market-value recalculation happen again at advice-run time."
+        candidate_assets: "Optional seed ideas with refreshed quotes when enabled.",
+        discovered_assets: "Web-discovered enabled-asset ideas enriched with free quote data when available.",
+        note: "Quote refresh, web-discovered idea extraction, and market-value recalculation happen again at advice-run time."
       },
       previousAdvice: (previousAdvice.results ?? []).map((row) => ({
         ...row,
@@ -207,7 +209,7 @@ function buildPromptPreview(
     "News context:",
     settings.web_search_mode === "none"
       ? "No web context will be requested."
-      : "Recent web/news summary with source URLs, optional seed ideas, and possible enabled-asset ideas outside the seed list.",
+      : "Recent web/news summary with source URLs, optional seed ideas, possible enabled-asset ideas outside the seed list, and free quote enrichment for discovered tickers.",
     "",
     "Previous advice and actual follow-through:",
     JSON.stringify(runtime.previousAdvice, null, 2),

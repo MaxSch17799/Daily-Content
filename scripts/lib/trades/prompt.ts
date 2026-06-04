@@ -32,6 +32,8 @@ export function buildNewsPrompt({
     "For possible buy ideas, include ticker/name, asset type, why it is relevant now, latest market price or price range if available, currency, and source URL.",
     "If you cannot verify Trade Republic availability, say that availability needs checking rather than excluding the idea.",
     "Avoid forums, rumors, and promotional stock-picking pages.",
+    "End with a DISCOVERED_IDEAS section using one line per idea:",
+    "symbol: TICKER | name: Company or fund name | asset_type: stock/etf/crypto | why: short reason | price: latest public price | currency: ISO currency | source_title: source title | source_url: URL",
     "Return a compact brief with source titles/URLs. Do not make final portfolio trade recommendations yet."
   ].join("\n");
 }
@@ -49,10 +51,13 @@ export function buildAdvicePrompt(input: {
     instructionPrompt,
     "",
     "Use this data carefully. Do not invent holdings, cash, executed trades, or confirmed Trade Republic availability.",
-    "Optional seed ideas are in snapshot.candidate_assets. Current holdings are in snapshot.holdings.",
+    "Optional seed ideas are in snapshot.candidate_assets. Web-discovered quoted ideas are in snapshot.discovered_assets. Current holdings are in snapshot.holdings.",
     "The seed ideas are not a whitelist. You may recommend newly researched enabled-asset buys from the news context even if they are not in snapshot.candidate_assets.",
     "For newly suggested assets, set trade_republic_availability to needs_check unless the context explicitly confirms availability.",
-    "For buy sizing, use a quote.price from snapshot.candidate_assets when available. For new assets, use the latest market price or price range from the news context/source data; cite that source. If no usable price is available, return watch instead of buy.",
+    "For buy sizing, first use quote_for_cash.price from snapshot.discovered_assets or a quote.price from snapshot.candidate_assets when available.",
+    "quote_for_cash.price is already converted to EUR for cash math. Use estimated_price in EUR when quote_for_cash exists and explain the original quote/currency in reason or cash_math.",
+    "Unknown Trade Republic availability must not block a buy recommendation; mark trade_republic_availability as needs_check and warn the user to verify availability and the final in-app price before execution.",
+    "Only return watch instead of buy when no usable public quote, source price, or EUR cash quote exists.",
     "If a buy or sell is recommended, the quantity must be concrete and executable from the cash/sell plan.",
     "For buy and sell recommendations, quantity, estimated_price, estimated_gross_amount, estimated_fee, estimated_cash_effect, reason, cash_math, and sources must be filled.",
     "For hold/watch recommendations, use quantity 0, gross amount 0, fee 0, and cash effect 0.",

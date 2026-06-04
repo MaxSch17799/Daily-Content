@@ -4,6 +4,7 @@ import { boolEnv, optionalEnv, requiredEnv } from "./lib/env";
 import { localDate } from "./lib/time";
 import { finishAiCall, logAiCall, startAiCall } from "./lib/trades/audit";
 import { buildAdvicePrompt, buildNewsPrompt } from "./lib/trades/prompt";
+import { enrichDiscoveredAssets, type DiscoveredAsset } from "./lib/trades/discovered-assets";
 import { generateNewsContext, generateTradeAdvice } from "./lib/trades/openai";
 import { refreshQuotes } from "./lib/trades/quotes";
 import { sendTradePush } from "./lib/trades/push";
@@ -151,25 +152,6 @@ async function main() {
         }))
       ]
     });
-    const snapshot = buildSnapshot({ positions, cash, quotes, candidates });
-    const snapshotId = randomUUID();
-    await d1.query(
-      `INSERT INTO trade_portfolio_snapshots (
-         id, portfolio_id, snapshot_date, cash_value, holdings_value, total_value, snapshot_json, created_at
-       )
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        snapshotId,
-        portfolioId,
-        runDate,
-        snapshot.cashValue,
-        snapshot.holdingsValue,
-        snapshot.totalValue,
-        JSON.stringify(snapshot),
-        new Date().toISOString()
-      ]
-    );
-
     await setRunProgress("Preparing web/news context prompt.");
     const newsPrompt = buildNewsPrompt({
       date: runDate,
@@ -227,6 +209,31 @@ async function main() {
         JSON.stringify(extractSources(news.raw)),
         news.parsed.summary,
         JSON.stringify(news.raw),
+        new Date().toISOString()
+      ]
+    );
+
+    await setRunProgress("Extracting web-discovered ideas and refreshing free quote data.");
+    const discoveredAssets = await enrichDiscoveredAssets({
+      summary: news.parsed.summary,
+      enabledAssetTypes: enabledAssetTypeNames(settings),
+      limit: 8
+    });
+    const snapshot = buildSnapshot({ positions, cash, quotes, candidates, discoveredAssets });
+    const snapshotId = randomUUID();
+    await d1.query(
+      `INSERT INTO trade_portfolio_snapshots (
+         id, portfolio_id, snapshot_date, cash_value, holdings_value, total_value, snapshot_json, created_at
+       )
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        snapshotId,
+        portfolioId,
+        runDate,
+        snapshot.cashValue,
+        snapshot.holdingsValue,
+        snapshot.totalValue,
+        JSON.stringify(snapshot),
         new Date().toISOString()
       ]
     );
@@ -445,12 +452,14 @@ function buildSnapshot({
   positions,
   cash,
   quotes,
-  candidates
+  candidates,
+  discoveredAssets
 }: {
   positions: PositionRow[];
   cash: CashRow[];
   quotes: Array<{ symbol: string; price: number; currency: string; marketTime: string | null; provider: string }>;
   candidates: CandidateAssetRow[];
+  discoveredAssets: DiscoveredAsset[];
 }) {
   const cashValue = cash.reduce((sum, row) => sum + Number(row.amount || 0), 0);
   const holdings = positions.map((position) => {
@@ -485,6 +494,7 @@ function buildSnapshot({
         notes: candidate.notes
       };
     }),
+    discovered_assets: discoveredAssets,
     cashValue,
     holdingsValue,
     totalValue,
@@ -502,12 +512,12 @@ function assetTypeEnabled(settings: TradeSettings, assetType: string): boolean {
   return settings.stocks_enabled === 1;
 }
 
-function enabledAssetTypeNames(settings: TradeSettings): string[] {
+function enabledAssetTypeNames(settings: TradeSettings): Array<"stock" | "etf" | "crypto"> {
   return [
     settings.stocks_enabled === 1 ? "stock" : "",
     settings.etfs_enabled === 1 ? "etf" : "",
     settings.crypto_enabled === 1 ? "crypto" : ""
-  ].filter(Boolean);
+  ].filter(Boolean) as Array<"stock" | "etf" | "crypto">;
 }
 
 function manualPromptEnabled(settings: TradeSettings): boolean {

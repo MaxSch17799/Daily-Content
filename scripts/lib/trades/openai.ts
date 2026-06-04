@@ -21,13 +21,13 @@ export async function generateNewsContext({
   const body: Record<string, unknown> = {
     model,
     input: prompt,
-    max_output_tokens: searchMode === "normal" ? 1400 : 900
+    max_output_tokens: searchMode === "heavy" ? 2600 : searchMode === "normal" ? 2200 : 1200
   };
   if (searchMode !== "none") {
     body.tools = [
       {
         type: "web_search_preview",
-        search_context_size: searchMode === "normal" ? "medium" : "low"
+        search_context_size: searchMode === "heavy" ? "high" : searchMode === "normal" ? "medium" : "low"
       }
     ];
   }
