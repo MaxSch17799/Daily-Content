@@ -152,6 +152,10 @@ async function applyTradeToPositions(
     trade.type === "buy"
       ? (existing?.starting_cost_basis ?? 0) + trade.gross
       : Math.max(0, (existing?.starting_cost_basis ?? 0) * (nextQuantity / Math.max(existing?.quantity ?? nextQuantity, 1)));
+  const nextValue =
+    trade.type === "buy"
+      ? (existing?.current_value ?? 0) + trade.gross
+      : Math.max(0, (existing?.current_value ?? 0) * (nextQuantity / Math.max(existing?.quantity ?? nextQuantity, 1)));
 
   if (existing && nextQuantity <= 0.0000001) {
     await env.DB.prepare("DELETE FROM trade_positions WHERE id = ?").bind(existing.id).run();
@@ -164,7 +168,7 @@ async function applyTradeToPositions(
        SET quantity = ?, starting_cost_basis = ?, current_value = ?, avg_buy_price = ?, updated_at = datetime('now')
        WHERE id = ?`
     )
-      .bind(nextQuantity, nextCost, existing.current_value, nextQuantity > 0 ? nextCost / nextQuantity : null, existing.id)
+      .bind(nextQuantity, nextCost, nextValue, nextQuantity > 0 ? nextCost / nextQuantity : null, existing.id)
       .run();
     return;
   }

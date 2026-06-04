@@ -57,6 +57,33 @@ interface PortfolioState {
   latestQuotes: TradeMarketQuote[];
 }
 
+interface AdviceInputDraft {
+  recommendationId: string;
+  status: string;
+  actualAction: "none" | "buy" | "sell";
+  actualQuantity: string;
+  actualPrice: string;
+  actualFee: string;
+  actualCurrency: string;
+  actualTradedAt: string;
+  notes: string;
+}
+
+interface StockCorrectionDraft {
+  mode: "buy" | "sell" | "set";
+  assetType: "stock" | "etf" | "crypto";
+  symbol: string;
+  name: string;
+  isin: string;
+  quantity: string;
+  targetQuantity: string;
+  price: string;
+  fee: string;
+  currency: string;
+  tradedAt: string;
+  notes: string;
+}
+
 export function TradesPage({ section = "dashboard" }: TradesPageProps) {
   const activeSection = normalizeSection(section);
   const [unlocked, setUnlocked] = useState(false);
@@ -211,6 +238,7 @@ export function TradesPage({ section = "dashboard" }: TradesPageProps) {
       {activeSection === "advice" && (
         <TradesAdvice
           advice={advice}
+          portfolio={portfolio}
           onRun={async () => {
             const result = await runTradeAdviceNow("normal");
             setMessage(result.alreadyRunning ? "Trade advice is already running." : "Trade advice workflow dispatched.");
@@ -547,12 +575,14 @@ function TradesImport({ onSaved, onError }: { onSaved: () => Promise<void>; onEr
 
 function TradesAdvice({
   advice,
+  portfolio,
   onRun,
   onDeployCash,
   onSaved,
   onError
 }: {
   advice: { run: AdviceRun | null; runs: AdviceRun[]; recommendations: TradeRecommendation[] };
+  portfolio: PortfolioState | null;
   onRun: () => Promise<{ runId: string; status: string; alreadyRunning: boolean }>;
   onDeployCash: () => Promise<{ runId: string; status: string; alreadyRunning: boolean }>;
   onSaved: () => Promise<void>;
@@ -660,7 +690,21 @@ function TradesAdvice({
       return;
     }
     try {
-      await confirmTradeAdvice(runForConfirm.id, drafts, adviceNote);
+      await confirmTradeAdvice(
+        runForConfirm.id,
+        drafts.map((draft) => ({
+          recommendationId: draft.recommendationId,
+          status: draft.status,
+          actualAction: draft.actualAction,
+          actualQuantity: parseOptionalNumber(draft.actualQuantity),
+          actualPrice: parseOptionalNumber(draft.actualPrice),
+          actualFee: parseOptionalNumber(draft.actualFee),
+          actualCurrency: draft.actualCurrency,
+          actualTradedAt: draft.actualTradedAt,
+          notes: draft.notes
+        })),
+        adviceNote
+      );
       setConfirming(false);
       await onSaved();
     } catch (err) {
@@ -742,6 +786,7 @@ function TradesAdvice({
   const inputIgnored = inputStatus === "ignored";
   const inputReadOnly = inputButtonLabel === "View input" || inputButtonLabel === "View ignored";
   const canIgnoreAdvice = Boolean(visibleRun && !inputReadOnly && !progress.inputBatch && !visibleRun.input_batch_id);
+  const adviceInputSummary = calculateAdviceInputSummary(drafts, visibleRecommendations, portfolio);
 
   return (
     <div className="trades-stack">
@@ -871,79 +916,108 @@ function TradesAdvice({
             />
           </label>
           {inputMode !== "ignore" && !inputIgnored && (
-            <div className="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Status</th>
-                    <th>Symbol</th>
-                    <th>Qty</th>
-                    <th>Price</th>
-                    <th>Fee</th>
-                    <th>Trade time</th>
-                    <th>Notes</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {drafts.map((draft, index) => (
-                    <tr key={draft.recommendationId}>
-                      <td>
-                        <select
-                          value={draft.status}
-                          disabled={inputMode === "view"}
-                          onChange={(event) => updateDraft(index, "status", event.target.value)}
-                        >
-                          <option value="accepted">Done</option>
-                          <option value="edited">Edited</option>
-                          <option value="partial">Partial</option>
-                          <option value="skipped">Skipped</option>
-                          <option value="unavailable">Unavailable</option>
-                        </select>
-                      </td>
-                      <td>{visibleRecommendations[index]?.symbol}</td>
-                      <td>
-                        <input
-                          type="number"
-                          disabled={inputMode === "view"}
-                          value={draft.actualQuantity ?? 0}
-                          onChange={(event) => updateDraft(index, "actualQuantity", Number(event.target.value))}
-                        />
-                      </td>
-                      <td>
-                        <input
-                          type="number"
-                          disabled={inputMode === "view"}
-                          value={draft.actualPrice ?? 0}
-                          onChange={(event) => updateDraft(index, "actualPrice", Number(event.target.value))}
-                        />
-                      </td>
-                      <td>
-                        <input
-                          type="number"
-                          disabled={inputMode === "view"}
-                          value={draft.actualFee ?? 1}
-                          onChange={(event) => updateDraft(index, "actualFee", Number(event.target.value))}
-                        />
-                      </td>
-                      <td>
-                        <input
-                          type="datetime-local"
-                          disabled={inputMode === "view"}
-                          value={toDateTimeLocal(draft.actualTradedAt)}
-                          onChange={(event) => updateDraft(index, "actualTradedAt", fromDateTimeLocal(event.target.value))}
-                        />
-                      </td>
-                      <td>
-                        <input
-                          disabled={inputMode === "view"}
-                          value={draft.notes ?? ""}
-                          onChange={(event) => updateDraft(index, "notes", event.target.value)}
-                        />
-                      </td>
+            <div className="trades-stack">
+              <div className="metric-grid compact-metrics">
+                <Metric label="Cash before input" value={formatMoney(adviceInputSummary.cashBefore, adviceInputSummary.currency)} />
+                <Metric label="Total buys" value={formatMoney(adviceInputSummary.buyGross, adviceInputSummary.currency)} />
+                <Metric label="Total sells" value={formatMoney(adviceInputSummary.sellGross, adviceInputSummary.currency)} />
+                <Metric label="Fees" value={formatMoney(adviceInputSummary.fees, adviceInputSummary.currency)} />
+                <Metric label="Cash after input" value={formatMoney(adviceInputSummary.cashAfter, adviceInputSummary.currency)} />
+              </div>
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Status</th>
+                      <th>Symbol</th>
+                      <th>Actual action</th>
+                      <th>Qty</th>
+                      <th>Price</th>
+                      <th>Fee</th>
+                      <th>Cash effect</th>
+                      <th>Trade time</th>
+                      <th>Notes</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {drafts.map((draft, index) => {
+                      const rowMath = calculateAdviceDraftCashEffect(draft);
+                      return (
+                        <tr key={draft.recommendationId}>
+                          <td>
+                            <select
+                              value={draft.status}
+                              disabled={inputMode === "view"}
+                              onChange={(event) => updateDraft(index, "status", event.target.value)}
+                            >
+                              <option value="accepted">Done</option>
+                              <option value="edited">Edited</option>
+                              <option value="partial">Partial</option>
+                              <option value="skipped">Skipped</option>
+                              <option value="unavailable">Unavailable</option>
+                            </select>
+                          </td>
+                          <td>{visibleRecommendations[index]?.symbol}</td>
+                          <td>
+                            <select
+                              value={draft.actualAction}
+                              disabled={inputMode === "view"}
+                              onChange={(event) => updateDraft(index, "actualAction", event.target.value as AdviceInputDraft["actualAction"])}
+                            >
+                              <option value="none">No trade</option>
+                              <option value="buy">Buy</option>
+                              <option value="sell">Sell</option>
+                            </select>
+                          </td>
+                          <td>
+                            <input
+                              type="number"
+                              inputMode="decimal"
+                              disabled={inputMode === "view" || draft.actualAction === "none"}
+                              value={draft.actualQuantity}
+                              onChange={(event) => updateDraft(index, "actualQuantity", event.target.value)}
+                            />
+                          </td>
+                          <td>
+                            <input
+                              type="number"
+                              inputMode="decimal"
+                              disabled={inputMode === "view" || draft.actualAction === "none"}
+                              value={draft.actualPrice}
+                              onChange={(event) => updateDraft(index, "actualPrice", event.target.value)}
+                            />
+                          </td>
+                          <td>
+                            <input
+                              type="number"
+                              inputMode="decimal"
+                              disabled={inputMode === "view" || draft.actualAction === "none"}
+                              value={draft.actualFee}
+                              onChange={(event) => updateDraft(index, "actualFee", event.target.value)}
+                            />
+                          </td>
+                          <td>{formatMoney(rowMath.cashEffect, draft.actualCurrency || adviceInputSummary.currency)}</td>
+                          <td>
+                            <input
+                              type="datetime-local"
+                              disabled={inputMode === "view"}
+                              value={toDateTimeLocal(draft.actualTradedAt)}
+                              onChange={(event) => updateDraft(index, "actualTradedAt", fromDateTimeLocal(event.target.value))}
+                            />
+                          </td>
+                          <td>
+                            <input
+                              disabled={inputMode === "view"}
+                              value={draft.notes ?? ""}
+                              onChange={(event) => updateDraft(index, "notes", event.target.value)}
+                            />
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
           {inputMode === "ignore" && (
@@ -961,7 +1035,7 @@ function TradesAdvice({
     </div>
   );
 
-  function updateDraft(index: number, key: keyof ReturnType<typeof recommendationToDraft>, value: unknown) {
+  function updateDraft<K extends keyof AdviceInputDraft>(index: number, key: K, value: AdviceInputDraft[K]) {
     setDrafts((current) => current.map((draft, currentIndex) => (currentIndex === index ? { ...draft, [key]: value } : draft)));
   }
 }
@@ -1144,24 +1218,60 @@ function TradesPortfolio({
   onSaved: () => Promise<void>;
   onError: (message: string) => void;
 }) {
-  const [cashAmount, setCashAmount] = useState(0);
+  const [cashAmount, setCashAmount] = useState("");
   const [cashType, setCashType] = useState("deposit");
   const [refreshingPrices, setRefreshingPrices] = useState(false);
+  const [stockDraft, setStockDraft] = useState<StockCorrectionDraft>(() => defaultStockCorrectionDraft());
+  const stockMath = calculateStockCorrection(stockDraft, portfolio);
 
   async function saveCash(event: FormEvent) {
     event.preventDefault();
+    const amount = parseNumberInput(cashAmount);
     try {
       await saveTradeTransaction({
         type: cashType,
-        gross_amount: cashAmount,
-        cash_effect: cashType === "withdrawal" ? -Math.abs(cashAmount) : Math.abs(cashAmount),
+        gross_amount: amount,
+        cash_effect: cashType === "withdrawal" ? -Math.abs(amount) : Math.abs(amount),
         currency: "EUR",
         notes: "Manual cash correction"
       });
-      setCashAmount(0);
+      setCashAmount("");
       await onSaved();
     } catch (err) {
       onError(err instanceof Error ? err.message : "Could not save cash transaction.");
+    }
+  }
+
+  async function saveStockCorrection(event: FormEvent) {
+    event.preventDefault();
+    if (!stockMath.action || stockMath.quantity <= 0) {
+      onError("Stock correction needs a non-zero quantity change.");
+      return;
+    }
+    if (stockMath.price <= 0) {
+      onError("Stock correction needs an actual price.");
+      return;
+    }
+    try {
+      await saveTradeTransaction({
+        type: stockMath.action,
+        asset_type: stockDraft.assetType,
+        symbol: stockDraft.symbol.trim().toUpperCase(),
+        name: stockDraft.name.trim() || stockMath.existing?.name || stockDraft.symbol.trim().toUpperCase(),
+        isin: stockDraft.isin.trim() || stockMath.existing?.isin || undefined,
+        quantity: stockMath.quantity,
+        price: stockMath.price,
+        gross_amount: stockMath.gross,
+        fee: stockMath.fee,
+        currency: stockDraft.currency || portfolio.portfolio.base_currency,
+        cash_effect: stockMath.cashEffect,
+        notes: stockDraft.notes || `Stock correction: ${stockDraft.mode}`,
+        traded_at: stockDraft.tradedAt
+      });
+      setStockDraft(defaultStockCorrectionDraft());
+      await onSaved();
+    } catch (err) {
+      onError(err instanceof Error ? err.message : "Could not save stock correction.");
     }
   }
 
@@ -1211,9 +1321,111 @@ function TradesPortfolio({
             <option value="deposit">Deposit</option>
             <option value="withdrawal">Withdrawal</option>
           </select>
-          <input type="number" value={cashAmount} onChange={(event) => setCashAmount(Number(event.target.value))} />
+          <input type="number" inputMode="decimal" value={cashAmount} onChange={(event) => setCashAmount(event.target.value)} />
           <button className="primary-button" type="submit">
             Save
+          </button>
+        </form>
+      </section>
+      <section className="trades-panel">
+        <div className="panel-heading-row">
+          <div>
+            <h2>Stock correction</h2>
+            <p>Add a buy, reduce with a sell, or set the final quantity for a holding.</p>
+          </div>
+        </div>
+        <form className="stock-correction-grid" onSubmit={(event) => void saveStockCorrection(event)}>
+          <label>
+            Correction
+            <select value={stockDraft.mode} onChange={(event) => setStockField("mode", event.target.value as StockCorrectionDraft["mode"])}>
+              <option value="buy">Buy / add</option>
+              <option value="sell">Sell / reduce</option>
+              <option value="set">Set final quantity</option>
+            </select>
+          </label>
+          <label>
+            Type
+            <select
+              value={stockDraft.assetType}
+              onChange={(event) => setStockField("assetType", event.target.value as StockCorrectionDraft["assetType"])}
+            >
+              <option value="stock">Stock</option>
+              <option value="etf">ETF</option>
+              <option value="crypto">Crypto</option>
+            </select>
+          </label>
+          <label>
+            Symbol
+            <input value={stockDraft.symbol} onChange={(event) => updateStockSymbol(event.target.value)} placeholder="SAP" />
+          </label>
+          <label>
+            Name
+            <input value={stockDraft.name} onChange={(event) => setStockField("name", event.target.value)} placeholder="SAP SE" />
+          </label>
+          <label>
+            ISIN
+            <input value={stockDraft.isin} onChange={(event) => setStockField("isin", event.target.value.toUpperCase())} />
+          </label>
+          {stockDraft.mode === "set" ? (
+            <label>
+              Final quantity
+              <input
+                type="number"
+                inputMode="decimal"
+                value={stockDraft.targetQuantity}
+                onChange={(event) => setStockField("targetQuantity", event.target.value)}
+              />
+            </label>
+          ) : (
+            <label>
+              Quantity
+              <input
+                type="number"
+                inputMode="decimal"
+                value={stockDraft.quantity}
+                onChange={(event) => setStockField("quantity", event.target.value)}
+              />
+            </label>
+          )}
+          <label>
+            Price
+            <input type="number" inputMode="decimal" value={stockDraft.price} onChange={(event) => setStockField("price", event.target.value)} />
+          </label>
+          <label>
+            Fee
+            <input type="number" inputMode="decimal" value={stockDraft.fee} onChange={(event) => setStockField("fee", event.target.value)} />
+          </label>
+          <label>
+            Currency
+            <input value={stockDraft.currency} onChange={(event) => setStockField("currency", event.target.value.toUpperCase())} />
+          </label>
+          <label>
+            Trade time
+            <input
+              type="datetime-local"
+              value={toDateTimeLocal(stockDraft.tradedAt)}
+              onChange={(event) => setStockField("tradedAt", fromDateTimeLocal(event.target.value))}
+            />
+          </label>
+          <label className="settings-wide">
+            Notes
+            <input value={stockDraft.notes} onChange={(event) => setStockField("notes", event.target.value)} />
+          </label>
+          <div className="settings-wide metric-grid compact-metrics">
+            <Metric label="Current quantity" value={formatNumber(stockMath.currentQuantity)} />
+            <Metric label="Quantity change" value={`${stockMath.action === "sell" ? "-" : stockMath.action === "buy" ? "+" : ""}${formatNumber(stockMath.quantity)}`} />
+            <Metric label="Gross amount" value={formatMoney(stockMath.gross, stockDraft.currency || portfolio.portfolio.base_currency)} />
+            <Metric label="Cash effect" value={formatMoney(stockMath.cashEffect, stockDraft.currency || portfolio.portfolio.base_currency)} />
+            <Metric label="Cash after" value={formatMoney(stockMath.cashAfter, stockDraft.currency || portfolio.portfolio.base_currency)} />
+          </div>
+          {stockMath.warning && (
+            <div className="settings-wide">
+              <ErrorPanel message={stockMath.warning} />
+            </div>
+          )}
+          <button className="primary-button" type="submit">
+            <Save size={16} aria-hidden />
+            Save stock correction
           </button>
         </form>
       </section>
@@ -1223,6 +1435,80 @@ function TradesPortfolio({
       </section>
     </div>
   );
+
+  function setStockField<K extends keyof StockCorrectionDraft>(key: K, value: StockCorrectionDraft[K]) {
+    setStockDraft((current) => ({ ...current, [key]: value }));
+  }
+
+  function updateStockSymbol(value: string) {
+    const symbol = value.toUpperCase();
+    const existing = portfolio.positions.find((position) => position.symbol.toUpperCase() === symbol);
+    setStockDraft((current) => ({
+      ...current,
+      symbol,
+      name: current.name || existing?.name || "",
+      isin: current.isin || existing?.isin || "",
+      assetType: (existing?.asset_type as StockCorrectionDraft["assetType"]) || current.assetType,
+      currency: existing?.currency || current.currency
+    }));
+  }
+}
+
+function defaultStockCorrectionDraft(): StockCorrectionDraft {
+  return {
+    mode: "buy",
+    assetType: "stock",
+    symbol: "",
+    name: "",
+    isin: "",
+    quantity: "",
+    targetQuantity: "",
+    price: "",
+    fee: "1",
+    currency: "EUR",
+    tradedAt: new Date().toISOString(),
+    notes: ""
+  };
+}
+
+function calculateStockCorrection(draft: StockCorrectionDraft, portfolio: PortfolioState) {
+  const symbol = draft.symbol.trim().toUpperCase();
+  const existing = portfolio.positions.find((position) => position.symbol.toUpperCase() === symbol);
+  const currentQuantity = Number(existing?.quantity || 0);
+  const cashBefore = portfolio.cash.reduce((sum, cash) => sum + Number(cash.amount || 0), 0);
+  const price = parseNumberInput(draft.price);
+  const fee = parseNumberInput(draft.fee);
+  let action: "buy" | "sell" | null = draft.mode === "buy" ? "buy" : draft.mode === "sell" ? "sell" : null;
+  let quantity = parseNumberInput(draft.quantity);
+
+  if (draft.mode === "set") {
+    const targetQuantity = parseNumberInput(draft.targetQuantity);
+    const delta = targetQuantity - currentQuantity;
+    action = delta > 0 ? "buy" : delta < 0 ? "sell" : null;
+    quantity = Math.abs(delta);
+  }
+
+  const gross = quantity * price;
+  const cashEffect = action === "buy" ? -(gross + fee) : action === "sell" ? gross - fee : 0;
+  const warning =
+    action === "sell" && quantity > currentQuantity
+      ? "This sell/reduction is larger than the current position."
+      : action === "buy" && cashBefore + cashEffect < 0
+        ? "This buy would make the cash balance negative."
+        : "";
+
+  return {
+    existing,
+    currentQuantity,
+    action,
+    quantity,
+    price,
+    fee: action ? fee : 0,
+    gross,
+    cashEffect,
+    cashAfter: cashBefore + cashEffect,
+    warning
+  };
 }
 
 function TradesSystemEditor({
@@ -1761,17 +2047,71 @@ function Metric({ label, value }: { label: string; value: string }) {
   );
 }
 
-function recommendationToDraft(rec: TradeRecommendation, inputTransactions: TradeTransaction[] = []) {
+function recommendationToDraft(rec: TradeRecommendation, inputTransactions: TradeTransaction[] = []): AdviceInputDraft {
   const input = inputTransactions.find((transaction) => transaction.recommendation_id === rec.id);
+  const status = input ? "accepted" : rec.status && rec.status !== "pending" ? rec.status : rec.action === "buy" || rec.action === "sell" ? "accepted" : "skipped";
+  const actualAction = input?.type === "buy" || input?.type === "sell" ? input.type : rec.action === "buy" || rec.action === "sell" ? rec.action : "none";
   return {
     recommendationId: rec.id,
-    status: input ? "accepted" : rec.status && rec.status !== "pending" ? rec.status : rec.action === "buy" || rec.action === "sell" ? "accepted" : "skipped",
-    actualQuantity: input?.quantity ?? rec.suggested_quantity ?? 0,
-    actualPrice: input?.price ?? rec.suggested_price ?? 0,
-    actualFee: input?.fee ?? rec.suggested_fee ?? 1,
+    status,
+    actualAction,
+    actualQuantity: input?.quantity === null || input?.quantity === undefined ? numberInputValue(rec.suggested_quantity) : numberInputValue(input.quantity),
+    actualPrice: input?.price === null || input?.price === undefined ? numberInputValue(rec.suggested_price) : numberInputValue(input.price),
+    actualFee: input?.fee === null || input?.fee === undefined ? numberInputValue(rec.suggested_fee ?? 1) : numberInputValue(input.fee),
     actualCurrency: input?.currency || rec.price_currency || "EUR",
     actualTradedAt: input?.traded_at || new Date().toISOString(),
     notes: input?.notes || ""
+  };
+}
+
+function calculateAdviceInputSummary(
+  drafts: AdviceInputDraft[],
+  recommendations: TradeRecommendation[],
+  portfolio: PortfolioState | null
+) {
+  const currency = portfolio?.portfolio.base_currency || "EUR";
+  const cashBefore = portfolio?.cash.reduce((sum, cash) => sum + Number(cash.amount || 0), 0) ?? 0;
+  const rows = drafts.map((draft, index) => ({
+    recommendation: recommendations[index],
+    ...calculateAdviceDraftCashEffect(draft)
+  }));
+  const buyGross = rows.filter((row) => row.action === "buy").reduce((sum, row) => sum + row.gross, 0);
+  const sellGross = rows.filter((row) => row.action === "sell").reduce((sum, row) => sum + row.gross, 0);
+  const fees = rows.reduce((sum, row) => sum + row.fee, 0);
+  const cashEffect = rows.reduce((sum, row) => sum + row.cashEffect, 0);
+  return {
+    currency,
+    cashBefore,
+    buyGross,
+    sellGross,
+    fees,
+    cashEffect,
+    cashAfter: cashBefore + cashEffect
+  };
+}
+
+function calculateAdviceDraftCashEffect(draft: AdviceInputDraft): {
+  action: "buy" | "sell" | "none";
+  quantity: number;
+  price: number;
+  fee: number;
+  gross: number;
+  cashEffect: number;
+} {
+  if (!["accepted", "edited", "partial"].includes(draft.status) || draft.actualAction === "none") {
+    return { action: "none", quantity: 0, price: 0, fee: 0, gross: 0, cashEffect: 0 };
+  }
+  const quantity = parseNumberInput(draft.actualQuantity);
+  const price = parseNumberInput(draft.actualPrice);
+  const fee = parseNumberInput(draft.actualFee);
+  const gross = quantity * price;
+  return {
+    action: draft.actualAction,
+    quantity,
+    price,
+    fee,
+    gross,
+    cashEffect: draft.actualAction === "buy" ? -(gross + fee) : gross - fee
   };
 }
 
@@ -1851,6 +2191,29 @@ function formatMoney(value: number, currency = "EUR"): string {
 
 function formatNumber(value: number): string {
   return new Intl.NumberFormat("en", { maximumFractionDigits: 6 }).format(Number(value || 0));
+}
+
+function numberInputValue(value: number | null | undefined): string {
+  if (value === null || value === undefined || !Number.isFinite(Number(value))) {
+    return "";
+  }
+  return String(Number(value));
+}
+
+function parseNumberInput(value: string | number | null | undefined): number {
+  if (value === "" || value === null || value === undefined) {
+    return 0;
+  }
+  const number = Number(value);
+  return Number.isFinite(number) ? number : 0;
+}
+
+function parseOptionalNumber(value: string | number | null | undefined): number | undefined {
+  if (value === "" || value === null || value === undefined) {
+    return undefined;
+  }
+  const number = Number(value);
+  return Number.isFinite(number) ? number : undefined;
 }
 
 function formatDate(value: string): string {

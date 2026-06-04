@@ -362,6 +362,7 @@ export async function confirmTradeAdvice(
   confirmations: Array<{
     recommendationId: string;
     status: string;
+    actualAction?: "none" | "buy" | "sell";
     actualQuantity?: number;
     actualPrice?: number;
     actualFee?: number;

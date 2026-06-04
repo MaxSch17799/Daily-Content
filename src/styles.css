@@ -683,8 +683,19 @@ th {
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
 }
 
+.stock-correction-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 12px;
+  align-items: end;
+}
+
 .settings-wide {
   grid-column: 1 / -1;
+}
+
+.compact-metrics {
+  margin: 0;
 }
 
 .disabled-panel {
