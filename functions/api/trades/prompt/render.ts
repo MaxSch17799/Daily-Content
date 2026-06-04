@@ -110,7 +110,7 @@ function buildPromptBlocks(settings: PromptSettings) {
     [
       "assets.enabled",
       "Enabled asset types",
-      `Enabled asset types: ${enabledAssets || "none"}. Do not recommend disabled asset types. If no asset type is enabled, return no buy ideas and explain why.`
+      `Enabled asset types: ${enabledAssets || "none"}. Do not recommend disabled asset types. If no asset type is enabled, return no buy ideas and explain why. You may suggest enabled assets outside the optional seed list and mark Trade Republic availability as needs_check when unknown.`
     ],
     [
       "cash.deployment",
@@ -205,7 +205,9 @@ function buildPromptPreview(
     JSON.stringify(settings, null, 2),
     "",
     "News context:",
-    settings.web_search_mode === "none" ? "No web context will be requested." : "Recent web/news summary with source URLs.",
+    settings.web_search_mode === "none"
+      ? "No web context will be requested."
+      : "Recent web/news summary with source URLs, optional seed ideas, and possible enabled-asset ideas outside the seed list.",
     "",
     "Previous advice and actual follow-through:",
     JSON.stringify(runtime.previousAdvice, null, 2),

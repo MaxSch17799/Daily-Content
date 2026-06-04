@@ -2,11 +2,13 @@ export function buildNewsPrompt({
   date,
   positions,
   candidates = [],
+  enabledAssetTypes = [],
   searchMode
 }: {
   date: string;
   positions: Array<{ symbol: string; name: string; asset_type: string }>;
   candidates?: Array<{ symbol: string; name: string; asset_type: string }>;
+  enabledAssetTypes?: string[];
   searchMode: string;
 }): string {
   const trackedAssets = [
@@ -18,15 +20,19 @@ export function buildNewsPrompt({
     `Date: ${date}`,
     "Region: Europe/Berlin",
     `Search mode: ${searchMode}`,
+    `Enabled asset types for possible buys: ${enabledAssetTypes.length ? enabledAssetTypes.join(", ") : "none"}`,
     "",
     "Search recent reliable sources from the last 48 hours.",
-    "Focus on broad Europe/US market context, macro events, current holdings, and enabled buy candidates:",
+    "Focus on broad Europe/US market context, macro events, current holdings, and optional seed ideas:",
     ...(trackedAssets.length > 0
       ? trackedAssets.map((asset) => `- ${asset.name} (${asset.symbol}, ${asset.asset_type}, ${asset.label})`)
-      : ["- No holdings or candidates were provided; return broad market context only."]),
+      : ["- No holdings or seed ideas were provided; research broad context and possible enabled-asset buy ideas."]),
     "",
+    "The seed ideas are not a whitelist. Also search for other reasonable enabled-asset buy ideas even if Trade Republic availability is unknown.",
+    "For possible buy ideas, include ticker/name, asset type, why it is relevant now, latest market price or price range if available, currency, and source URL.",
+    "If you cannot verify Trade Republic availability, say that availability needs checking rather than excluding the idea.",
     "Avoid forums, rumors, and promotional stock-picking pages.",
-    "Return a compact brief with source titles/URLs. Do not make trade recommendations yet."
+    "Return a compact brief with source titles/URLs. Do not make final portfolio trade recommendations yet."
   ].join("\n");
 }
 
@@ -42,10 +48,11 @@ export function buildAdvicePrompt(input: {
   return [
     instructionPrompt,
     "",
-    "Use this data only. Do not invent prices, holdings, cash, or Trade Republic availability.",
-    "Enabled buy candidates are in snapshot.candidate_assets. Current holdings are in snapshot.holdings.",
-    "If snapshot.candidate_assets contains a candidate with quote.price, you may recommend a buy and must calculate quantity from available cash, quote.price, the fraction rules, and the 1 EUR fee.",
-    "If no quote.price or manual price is present for a buy candidate, do not create a buy. Use watch and explain that a Trade Republic quote/manual price is needed.",
+    "Use this data carefully. Do not invent holdings, cash, executed trades, or confirmed Trade Republic availability.",
+    "Optional seed ideas are in snapshot.candidate_assets. Current holdings are in snapshot.holdings.",
+    "The seed ideas are not a whitelist. You may recommend newly researched enabled-asset buys from the news context even if they are not in snapshot.candidate_assets.",
+    "For newly suggested assets, set trade_republic_availability to needs_check unless the context explicitly confirms availability.",
+    "For buy sizing, use a quote.price from snapshot.candidate_assets when available. For new assets, use the latest market price or price range from the news context/source data; cite that source. If no usable price is available, return watch instead of buy.",
     "If a buy or sell is recommended, the quantity must be concrete and executable from the cash/sell plan.",
     "For buy and sell recommendations, quantity, estimated_price, estimated_gross_amount, estimated_fee, estimated_cash_effect, reason, cash_math, and sources must be filled.",
     "For hold/watch recommendations, use quantity 0, gross amount 0, fee 0, and cash effect 0.",
@@ -101,7 +108,7 @@ export function buildSettingsInstructionPrompt(settings: TradePromptSettings): s
     "Trade Republic charges 1 EUR per buy or sell transaction. Include this fee in every buy/sell cash calculation and avoid tiny trades where the fee makes the idea inefficient.",
     "",
     "Enabled asset types",
-    `Enabled asset types: ${enabledAssets || "none"}. Do not recommend disabled asset types. If no asset type is enabled, return no buy ideas and explain why.`,
+    `Enabled asset types: ${enabledAssets || "none"}. Do not recommend disabled asset types. If no asset type is enabled, return no buy ideas and explain why. You may suggest enabled assets outside the optional seed list and mark Trade Republic availability as needs_check when unknown.`,
     "",
     "Cash deployment",
     `You may deploy up to ${settings.max_cash_deploy_pct}% of available cash if justified. If buys need more cash than available, pair them with specific sells. Never create negative cash.`,

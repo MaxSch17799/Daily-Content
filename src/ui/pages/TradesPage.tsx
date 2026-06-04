@@ -1200,11 +1200,11 @@ function TradesSystemEditor({
       <section className="trades-panel">
         <div className="panel-heading-row">
           <div>
-            <h2>Buy candidates</h2>
-            <p>Enabled candidates with a quote or manual price can be sized into concrete buy recommendations.</p>
+            <h2>Seed ideas</h2>
+            <p>Optional watchlist seeds with quotes/manual prices. The AI can still suggest other enabled assets and mark availability as needs_check.</p>
           </div>
           <button className="secondary-button" type="button" onClick={addCandidate}>
-            Add candidate
+            Add seed
           </button>
         </div>
         <div className="table-wrap candidate-table">

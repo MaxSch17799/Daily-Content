@@ -171,7 +171,13 @@ async function main() {
     );
 
     await setRunProgress("Preparing web/news context prompt.");
-    const newsPrompt = buildNewsPrompt({ date: runDate, positions, candidates, searchMode: settings.web_search_mode });
+    const newsPrompt = buildNewsPrompt({
+      date: runDate,
+      positions,
+      candidates,
+      enabledAssetTypes: enabledAssetTypeNames(settings),
+      searchMode: settings.web_search_mode
+    });
     newsLogId = await startAiCall({
       d1,
       portfolioId,
@@ -494,6 +500,14 @@ function assetTypeEnabled(settings: TradeSettings, assetType: string): boolean {
     return settings.etfs_enabled === 1;
   }
   return settings.stocks_enabled === 1;
+}
+
+function enabledAssetTypeNames(settings: TradeSettings): string[] {
+  return [
+    settings.stocks_enabled === 1 ? "stock" : "",
+    settings.etfs_enabled === 1 ? "etf" : "",
+    settings.crypto_enabled === 1 ? "crypto" : ""
+  ].filter(Boolean);
 }
 
 function manualPromptEnabled(settings: TradeSettings): boolean {
