@@ -1,5 +1,5 @@
 import type { FunctionContext } from "../../../_lib/context";
-import { errorResponse, jsonResponse } from "../../../_lib/response";
+import { errorResponse, jsonResponse, readJson } from "../../../_lib/response";
 import { isTradeSession, requireTradeSession } from "../../../_lib/trades";
 
 export const onRequestPost = async ({ env, request }: FunctionContext) => {
@@ -8,6 +8,8 @@ export const onRequestPost = async ({ env, request }: FunctionContext) => {
     return session;
   }
 
+  const body = await readOptionalJson<{ mode?: string }>(request);
+  const adviceMode = body.mode === "deploy_all_cash" ? "deploy_all_cash" : "normal";
   const activeRun = await env.DB.prepare(
     `SELECT id, status, message, started_at
      FROM trade_advice_runs
@@ -29,11 +31,21 @@ export const onRequestPost = async ({ env, request }: FunctionContext) => {
 
   const runId = crypto.randomUUID();
   const startedAt = new Date().toISOString();
+  const runType = adviceMode === "deploy_all_cash" ? "deploy_all_cash" : "manual";
   await env.DB.prepare(
     `INSERT INTO trade_advice_runs (id, portfolio_id, run_date, run_type, status, started_at, message)
-     VALUES (?, ?, ?, 'manual', 'queued', ?, 'Workflow dispatch queued. Waiting for GitHub Actions to start.')`
+     VALUES (?, ?, ?, ?, 'queued', ?, ?)`
   )
-    .bind(runId, session.portfolioId, startedAt.slice(0, 10), startedAt)
+    .bind(
+      runId,
+      session.portfolioId,
+      startedAt.slice(0, 10),
+      runType,
+      startedAt,
+      adviceMode === "deploy_all_cash"
+        ? "Deploy-all-cash workflow dispatch queued. Waiting for GitHub Actions to start."
+        : "Workflow dispatch queued. Waiting for GitHub Actions to start."
+    )
     .run();
 
   const workflowId = env.GITHUB_TRADES_WORKFLOW_ID || "trade-advice.yml";
@@ -52,7 +64,8 @@ export const onRequestPost = async ({ env, request }: FunctionContext) => {
         inputs: {
           force: "true",
           portfolio_id: session.portfolioId,
-          run_id: runId
+          run_id: runId,
+          advice_mode: adviceMode
         }
       })
     }
@@ -66,5 +79,13 @@ export const onRequestPost = async ({ env, request }: FunctionContext) => {
     return errorResponse(response.status, "workflow_dispatch_failed", errorText);
   }
 
-  return jsonResponse({ ok: true, runId, status: "queued", alreadyRunning: false });
+  return jsonResponse({ ok: true, runId, status: "queued", alreadyRunning: false, adviceMode });
 };
+
+async function readOptionalJson<T>(request: Request): Promise<T> {
+  try {
+    return await readJson<T>(request);
+  } catch {
+    return {} as T;
+  }
+}

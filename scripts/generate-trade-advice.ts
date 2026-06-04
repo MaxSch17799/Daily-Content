@@ -29,6 +29,19 @@ interface TradeSettings {
   overridden_settings_json: string;
 }
 
+interface TradePortfolio {
+  id: string;
+  user_id: string;
+  name: string;
+  base_currency: string;
+  broker: string;
+  broker_key: string;
+  fee_per_trade: number;
+  fee_model_json: string;
+  broker_pricing_url: string;
+  broker_updated_at: string | null;
+}
+
 interface PositionRow {
   id: string;
   asset_type: string;
@@ -69,6 +82,7 @@ async function main() {
   const siteUrl = optionalEnv("PUBLIC_SITE_URL", "https://daily-content.pages.dev");
   const portfolioId = optionalEnv("TRADES_DEFAULT_PORTFOLIO_ID", "max");
   const requestedRunId = optionalEnv("TRADES_RUN_ID", "").trim();
+  const requestedAdviceMode = cleanAdviceMode(optionalEnv("TRADES_ADVICE_MODE", "normal"));
   const force = boolEnv("FORCE_GENERATE", false) || process.argv.includes("--force");
   const model = optionalEnv("TRADES_TEXT_MODEL", "gpt-5.4-mini");
   const d1 = new CloudflareD1Client(accountId, databaseId, cloudflareToken);
@@ -76,6 +90,10 @@ async function main() {
   const settings = await d1.first<TradeSettings>("SELECT * FROM trade_settings WHERE portfolio_id = ?", [portfolioId]);
   if (!settings) {
     throw new Error(`Missing trade_settings for portfolio ${portfolioId}. Run migrations first.`);
+  }
+  const portfolio = await d1.first<TradePortfolio>("SELECT * FROM trade_portfolios WHERE id = ?", [portfolioId]);
+  if (!portfolio) {
+    throw new Error(`Missing trade_portfolios row for portfolio ${portfolioId}. Run migrations first.`);
   }
 
   if (!force && settings.weekdays_only === 1 && isWeekend(settings.timezone)) {
@@ -91,8 +109,12 @@ async function main() {
   const runId = requestedRunId || randomUUID();
   const startedAt = new Date().toISOString();
   const existingRun = requestedRunId
-    ? await d1.first<{ id: string }>("SELECT id FROM trade_advice_runs WHERE id = ? AND portfolio_id = ?", [requestedRunId, portfolioId])
+    ? await d1.first<{ id: string; run_type: string }>("SELECT id, run_type FROM trade_advice_runs WHERE id = ? AND portfolio_id = ?", [
+        requestedRunId,
+        portfolioId
+      ])
     : null;
+  const adviceMode = existingRun?.run_type === "deploy_all_cash" ? "deploy_all_cash" : requestedAdviceMode;
   if (existingRun) {
     await d1.query(
       `UPDATE trade_advice_runs
@@ -104,7 +126,7 @@ async function main() {
     await d1.query(
       `INSERT INTO trade_advice_runs (id, portfolio_id, run_date, run_type, status, started_at, model, message)
        VALUES (?, ?, ?, ?, 'running', ?, ?, 'Starting trade advice generator.')`,
-      [runId, portfolioId, runDate, force ? "manual" : "scheduled", startedAt, model]
+      [runId, portfolioId, runDate, adviceMode === "deploy_all_cash" ? "deploy_all_cash" : force ? "manual" : "scheduled", startedAt, model]
     );
   }
 
@@ -158,7 +180,8 @@ async function main() {
       positions,
       candidates,
       enabledAssetTypes: enabledAssetTypeNames(settings),
-      searchMode: settings.web_search_mode
+      searchMode: settings.web_search_mode,
+      brokerName: portfolio.broker
     });
     newsLogId = await startAiCall({
       d1,
@@ -169,6 +192,8 @@ async function main() {
       promptText: newsPrompt,
       input: {
         settings,
+        portfolio,
+        adviceMode,
         positions: positions.map((position) => position.symbol),
         candidates: candidates.map((candidate) => candidate.symbol)
       }
@@ -290,11 +315,13 @@ async function main() {
     await setRunProgress("Building structured trade recommendation prompt.");
     const advicePrompt = buildAdvicePrompt({
       settings,
+      portfolio,
       snapshot,
       newsSummary: news.parsed.summary,
       previousAdvice: previousAdviceForPrompt,
       unavailableAssets: unavailable.results,
-      promptText: manualPromptEnabled(settings) ? settings.prompt_text : ""
+      promptText: manualPromptEnabled(settings) ? settings.prompt_text : "",
+      adviceMode
     });
 
     adviceLogId = await startAiCall({
@@ -304,7 +331,7 @@ async function main() {
       callType: "advice_json",
       model,
       promptText: advicePrompt,
-      input: { snapshot, settings, manualPrompt: manualPromptEnabled(settings) }
+      input: { snapshot, settings, portfolio, adviceMode, manualPrompt: manualPromptEnabled(settings) }
     });
     adviceLogRunning = true;
     await setRunProgress("Waiting for OpenAI structured buy/sell recommendation JSON.");
@@ -527,6 +554,10 @@ function manualPromptEnabled(settings: TradeSettings): boolean {
   } catch {
     return false;
   }
+}
+
+function cleanAdviceMode(value: string): "normal" | "deploy_all_cash" {
+  return value === "deploy_all_cash" ? "deploy_all_cash" : "normal";
 }
 
 function isWeekend(timeZone: string): boolean {

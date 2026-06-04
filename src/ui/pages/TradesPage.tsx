@@ -6,6 +6,10 @@ import {
   AuditLogListItem,
   ParsedHolding,
   TradeCandidateAsset,
+  TradeBrokerFeeModel,
+  TradeMarketQuote,
+  TradePortfolioInfo,
+  TradePortfolioSnapshot,
   TradePosition,
   TradeRecommendation,
   TradeSettings,
@@ -26,6 +30,7 @@ import {
   logoutTrades,
   parsePortfolioText,
   renderTradePrompt,
+  refreshTradeQuotes,
   runTradeAdviceNow,
   saveTradeCandidates,
   saveTradePrompt,
@@ -46,7 +51,10 @@ interface PortfolioState {
   cash: Array<{ currency: string; amount: number }>;
   positions: TradePosition[];
   settings: TradeSettings;
+  portfolio: TradePortfolioInfo;
   latestAdvice: AdviceRun | null;
+  snapshots: TradePortfolioSnapshot[];
+  latestQuotes: TradeMarketQuote[];
 }
 
 export function TradesPage({ section = "dashboard" }: TradesPageProps) {
@@ -61,6 +69,7 @@ export function TradesPage({ section = "dashboard" }: TradesPageProps) {
   });
   const [transactions, setTransactions] = useState<unknown[]>([]);
   const [settings, setSettings] = useState<TradeSettings | null>(null);
+  const [tradePortfolio, setTradePortfolio] = useState<TradePortfolioInfo | null>(null);
   const [candidateAssets, setCandidateAssets] = useState<TradeCandidateAsset[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLogListItem[]>([]);
   const [auditQuery, setAuditQuery] = useState("");
@@ -82,6 +91,7 @@ export function TradesPage({ section = "dashboard" }: TradesPageProps) {
       setAdvice(adviceResult);
       setTransactions(transactionResult.transactions);
       setSettings(settingsResult.settings);
+      setTradePortfolio(settingsResult.portfolio || portfolioResult.portfolio);
       setCandidateAssets(settingsResult.candidateAssets || []);
       setUnlocked(true);
     } catch (err) {
@@ -202,8 +212,13 @@ export function TradesPage({ section = "dashboard" }: TradesPageProps) {
         <TradesAdvice
           advice={advice}
           onRun={async () => {
-            const result = await runTradeAdviceNow();
+            const result = await runTradeAdviceNow("normal");
             setMessage(result.alreadyRunning ? "Trade advice is already running." : "Trade advice workflow dispatched.");
+            return result;
+          }}
+          onDeployCash={async () => {
+            const result = await runTradeAdviceNow("deploy_all_cash");
+            setMessage(result.alreadyRunning ? "Trade advice is already running." : "Deploy-all-cash advice workflow dispatched.");
             return result;
           }}
           onSaved={async () => {
@@ -218,15 +233,16 @@ export function TradesPage({ section = "dashboard" }: TradesPageProps) {
           portfolio={portfolio}
           transactions={transactions}
           onSaved={async () => {
-            setMessage("Transaction saved.");
+            setMessage("Portfolio saved.");
             await loadAll();
           }}
           onError={setError}
         />
       )}
-      {activeSection === "settings" && settings && (
+      {activeSection === "settings" && settings && tradePortfolio && (
         <TradesSystemEditor
           settings={settings}
+          portfolio={tradePortfolio}
           candidateAssets={candidateAssets}
           onSaved={async () => {
             setMessage("Trading settings saved.");
@@ -258,19 +274,31 @@ function TradesDashboard({
   portfolio: PortfolioState;
   advice: { run: AdviceRun | null; recommendations: TradeRecommendation[] };
 }) {
-  const holdingsValue = portfolio.positions.reduce((sum, position) => sum + Number(position.current_value || 0), 0);
-  const cashValue = portfolio.cash.reduce((sum, cash) => sum + Number(cash.amount || 0), 0);
+  const { holdingsValue, cashValue, totalValue } = calculatePortfolioTotals(portfolio);
   const buys = advice.recommendations.filter((rec) => rec.action === "buy").length;
   const sells = advice.recommendations.filter((rec) => rec.action === "sell").length;
 
   return (
     <div className="trades-stack">
       <div className="metric-grid">
-        <Metric label="Total value" value={formatMoney(holdingsValue + cashValue)} />
-        <Metric label="Cash" value={formatMoney(cashValue)} />
-        <Metric label="Holdings" value={formatMoney(holdingsValue)} />
+        <Metric label="Total value" value={formatMoney(totalValue, portfolio.portfolio.base_currency)} />
+        <Metric label="Cash" value={formatMoney(cashValue, portfolio.portfolio.base_currency)} />
+        <Metric label="Holdings" value={formatMoney(holdingsValue, portfolio.portfolio.base_currency)} />
         <Metric label="Latest advice" value={advice.run ? `${buys} buy / ${sells} sell` : "None"} />
       </div>
+      <section className="trades-panel">
+        <div className="panel-heading-row">
+          <div>
+            <h2>Portfolio value</h2>
+            <p>{portfolio.snapshots.length ? `Tracking ${portfolio.snapshots.length} saved snapshots.` : "Refresh prices to start a value chart."}</p>
+          </div>
+        </div>
+        <PortfolioValueChart snapshots={portfolio.snapshots} currency={portfolio.portfolio.base_currency} />
+      </section>
+      <section className="trades-panel">
+        <h2>Allocation</h2>
+        <AllocationBreakdown portfolio={portfolio} />
+      </section>
       <section className="trades-panel">
         <h2>Current holdings</h2>
         <PositionsTable positions={portfolio.positions} />
@@ -286,6 +314,132 @@ function TradesDashboard({
       )}
     </div>
   );
+}
+
+function PortfolioValueChart({ snapshots, currency }: { snapshots: TradePortfolioSnapshot[]; currency: string }) {
+  const points = snapshots
+    .filter((snapshot) => Number.isFinite(Number(snapshot.total_value)))
+    .map((snapshot) => ({ ...snapshot, total_value: Number(snapshot.total_value) }));
+  if (points.length === 0) {
+    return <div className="empty-chart">No portfolio snapshots yet.</div>;
+  }
+
+  const width = 720;
+  const height = 220;
+  const padding = 28;
+  const values = points.map((point) => point.total_value);
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const range = max - min || Math.max(max, 1);
+  const xStep = points.length > 1 ? (width - padding * 2) / (points.length - 1) : 0;
+  const svgPoints = points
+    .map((point, index) => {
+      const x = points.length > 1 ? padding + index * xStep : width / 2;
+      const y = height - padding - ((point.total_value - min) / range) * (height - padding * 2);
+      return `${x},${y}`;
+    })
+    .join(" ");
+  const first = points[0];
+  const last = points[points.length - 1];
+  const change = last.total_value - first.total_value;
+
+  return (
+    <div className="portfolio-chart">
+      <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Portfolio value over time">
+        <line x1={padding} y1={padding} x2={padding} y2={height - padding} />
+        <line x1={padding} y1={height - padding} x2={width - padding} y2={height - padding} />
+        <polyline points={svgPoints} />
+        {points.map((point, index) => {
+          const [x, y] = svgPoints.split(" ")[index].split(",").map(Number);
+          return <circle key={point.id || `${point.created_at}-${index}`} cx={x} cy={y} r={4} />;
+        })}
+      </svg>
+      <div className="chart-meta">
+        <span>{formatDate(first.created_at)}</span>
+        <strong>{formatMoney(last.total_value, currency)}</strong>
+        <span className={change >= 0 ? "positive" : "negative"}>{change >= 0 ? "+" : ""}{formatMoney(change, currency)}</span>
+        <span>{formatDate(last.created_at)}</span>
+      </div>
+    </div>
+  );
+}
+
+function AllocationBreakdown({ portfolio }: { portfolio: PortfolioState }) {
+  const { cashValue, totalValue } = calculatePortfolioTotals(portfolio);
+  const items = [
+    { key: "cash", label: "Cash", value: cashValue, type: "cash" },
+    ...portfolio.positions.map((position) => ({
+      key: position.id,
+      label: `${position.symbol} ${position.name}`,
+      value: Number(position.current_value || 0),
+      type: position.asset_type
+    }))
+  ].filter((item) => item.value > 0);
+
+  if (items.length === 0) {
+    return <p>No allocation data yet.</p>;
+  }
+
+  return (
+    <div className="allocation-list">
+      {items.map((item) => {
+        const weight = totalValue > 0 ? (item.value / totalValue) * 100 : 0;
+        return (
+          <div className="allocation-row" key={item.key}>
+            <div className="allocation-label">
+              <strong>{item.label}</strong>
+              <span>{formatMoney(item.value, portfolio.portfolio.base_currency)} - {weight.toFixed(1)}%</span>
+            </div>
+            <div className="allocation-track" aria-hidden>
+              <span className={`allocation-fill ${item.type}`} style={{ width: `${Math.max(2, Math.min(100, weight))}%` }} />
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function LatestQuotesTable({ quotes }: { quotes: TradeMarketQuote[] }) {
+  if (quotes.length === 0) {
+    return <p>No saved quotes yet. Use Refresh prices after adding positions.</p>;
+  }
+  return (
+    <div className="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Symbol</th>
+            <th>Price</th>
+            <th>Provider</th>
+            <th>Market time</th>
+            <th>Fetched</th>
+          </tr>
+        </thead>
+        <tbody>
+          {quotes.map((quote) => (
+            <tr key={quote.id}>
+              <td>{quote.symbol}</td>
+              <td>{formatMoney(quote.price, quote.currency)}</td>
+              <td>{quote.provider_symbol} via {quote.provider}</td>
+              <td>{quote.market_time ? formatDate(quote.market_time) : "-"}</td>
+              <td>{formatDate(quote.fetched_at)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function calculatePortfolioTotals(portfolio: PortfolioState) {
+  const holdingsValue = portfolio.positions.reduce((sum, position) => sum + Number(position.current_value || 0), 0);
+  const cashValue = portfolio.cash.reduce((sum, cash) => sum + Number(cash.amount || 0), 0);
+  return {
+    holdingsValue,
+    cashValue,
+    totalValue: holdingsValue + cashValue
+  };
 }
 
 function TradesImport({ onSaved, onError }: { onSaved: () => Promise<void>; onError: (message: string) => void }) {
@@ -394,11 +548,13 @@ function TradesImport({ onSaved, onError }: { onSaved: () => Promise<void>; onEr
 function TradesAdvice({
   advice,
   onRun,
+  onDeployCash,
   onSaved,
   onError
 }: {
   advice: { run: AdviceRun | null; runs: AdviceRun[]; recommendations: TradeRecommendation[] };
   onRun: () => Promise<{ runId: string; status: string; alreadyRunning: boolean }>;
+  onDeployCash: () => Promise<{ runId: string; status: string; alreadyRunning: boolean }>;
   onSaved: () => Promise<void>;
   onError: (message: string) => void;
 }) {
@@ -526,7 +682,7 @@ function TradesAdvice({
     }
   }
 
-  async function runNow() {
+  async function runNow(mode: "normal" | "deploy_all_cash") {
     setRunning(true);
     setDetailsOpen(true);
     setProgress({
@@ -539,7 +695,7 @@ function TradesAdvice({
         output_json: "{}",
         started_at: new Date().toISOString(),
         finished_at: null,
-        message: "Dispatching GitHub workflow."
+        message: mode === "deploy_all_cash" ? "Dispatching deploy-all-cash advice workflow." : "Dispatching GitHub workflow."
       },
       logs: [],
       recommendations: [],
@@ -547,7 +703,7 @@ function TradesAdvice({
       inputTransactions: []
     });
     try {
-      const result = await onRun();
+      const result = mode === "deploy_all_cash" ? await onDeployCash() : await onRun();
       setProgressRunId(result.runId);
       setSelectedRunId(result.runId);
       setProgress((current) => ({
@@ -563,7 +719,11 @@ function TradesAdvice({
           }),
           id: result.runId,
           status: result.status,
-          message: result.alreadyRunning ? "Existing advice run is already in progress." : "Workflow queued. Waiting for GitHub Actions."
+          message: result.alreadyRunning
+            ? "Existing advice run is already in progress."
+            : mode === "deploy_all_cash"
+              ? "Deploy-all-cash workflow queued. Waiting for GitHub Actions."
+              : "Workflow queued. Waiting for GitHub Actions."
         } as AdviceRun
       }));
     } catch (err) {
@@ -588,9 +748,13 @@ function TradesAdvice({
       <section className="trades-panel">
         <div className="panel-heading-row">
           <h2>Advice</h2>
-          <button className="primary-button" type="button" onClick={() => void runNow()} disabled={running}>
+          <button className="primary-button" type="button" onClick={() => void runNow("normal")} disabled={running}>
             <Play size={16} aria-hidden />
             {running ? "Generating advice..." : "Run advice now"}
+          </button>
+          <button className="secondary-button" type="button" onClick={() => void runNow("deploy_all_cash")} disabled={running}>
+            <Play size={16} aria-hidden />
+            Deploy all cash advice
           </button>
         </div>
         {advice.runs.length > 0 && (
@@ -982,6 +1146,7 @@ function TradesPortfolio({
 }) {
   const [cashAmount, setCashAmount] = useState(0);
   const [cashType, setCashType] = useState("deposit");
+  const [refreshingPrices, setRefreshingPrices] = useState(false);
 
   async function saveCash(event: FormEvent) {
     event.preventDefault();
@@ -1000,11 +1165,44 @@ function TradesPortfolio({
     }
   }
 
+  async function refreshPrices() {
+    try {
+      setRefreshingPrices(true);
+      await refreshTradeQuotes();
+      await onSaved();
+    } catch (err) {
+      onError(err instanceof Error ? err.message : "Could not refresh prices.");
+    } finally {
+      setRefreshingPrices(false);
+    }
+  }
+
   return (
     <div className="trades-stack">
       <section className="trades-panel">
+        <div className="panel-heading-row">
+          <div>
+            <h2>Portfolio chart</h2>
+            <p>Snapshots are saved when advice runs and when prices are refreshed.</p>
+          </div>
+          <button className="primary-button" type="button" onClick={() => void refreshPrices()} disabled={refreshingPrices}>
+            <RefreshCw size={16} aria-hidden />
+            {refreshingPrices ? "Refreshing..." : "Refresh prices"}
+          </button>
+        </div>
+        <PortfolioValueChart snapshots={portfolio.snapshots} currency={portfolio.portfolio.base_currency} />
+      </section>
+      <section className="trades-panel">
+        <h2>Allocation</h2>
+        <AllocationBreakdown portfolio={portfolio} />
+      </section>
+      <section className="trades-panel">
         <h2>Positions</h2>
         <PositionsTable positions={portfolio.positions} />
+      </section>
+      <section className="trades-panel">
+        <h2>Latest quotes</h2>
+        <LatestQuotesTable quotes={portfolio.latestQuotes} />
       </section>
       <section className="trades-panel">
         <h2>Cash correction</h2>
@@ -1029,16 +1227,19 @@ function TradesPortfolio({
 
 function TradesSystemEditor({
   settings,
+  portfolio,
   candidateAssets,
   onSaved,
   onError
 }: {
   settings: TradeSettings;
+  portfolio: TradePortfolioInfo;
   candidateAssets: TradeCandidateAsset[];
   onSaved: () => Promise<void>;
   onError: (message: string) => void;
 }) {
   const [draft, setDraft] = useState(settings);
+  const [portfolioDraft, setPortfolioDraft] = useState(portfolio);
   const [candidateDrafts, setCandidateDrafts] = useState(candidateAssets);
   const [promptText, setPromptText] = useState(settings.prompt_text || "");
   const [promptMode, setPromptMode] = useState<"settings" | "manual">(hasManualPrompt(settings) ? "manual" : "settings");
@@ -1046,10 +1247,11 @@ function TradesSystemEditor({
 
   useEffect(() => {
     setDraft(settings);
+    setPortfolioDraft(portfolio);
     setCandidateDrafts(candidateAssets);
     setPromptMode(hasManualPrompt(settings) ? "manual" : "settings");
     setPromptText(settings.prompt_text || "");
-  }, [candidateAssets, settings]);
+  }, [candidateAssets, portfolio, settings]);
 
   useEffect(() => {
     if (promptMode !== "settings") {
@@ -1059,7 +1261,7 @@ function TradesSystemEditor({
     const timer = window.setTimeout(async () => {
       try {
         setRenderingPrompt(true);
-        const result = await renderTradePrompt(draft);
+        const result = await renderTradePrompt(draft, portfolioDraft);
         if (!cancelled) {
           setPromptText(result.promptText);
         }
@@ -1077,12 +1279,12 @@ function TradesSystemEditor({
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [draft, onError, promptMode]);
+  }, [draft, onError, portfolioDraft, promptMode]);
 
   async function renderPromptNow() {
     try {
       setRenderingPrompt(true);
-      const result = await renderTradePrompt(draft);
+      const result = await renderTradePrompt(draft, portfolioDraft);
       setPromptText(result.promptText);
     } catch (err) {
       onError(err instanceof Error ? err.message : "Could not render prompt.");
@@ -1095,7 +1297,7 @@ function TradesSystemEditor({
     event.preventDefault();
     try {
       if (promptMode === "settings") {
-        await saveTradesSettings({ ...draft, prompt_text: "", overridden_settings_json: [] });
+        await saveTradesSettings({ ...draft, prompt_text: "", overridden_settings_json: [], portfolio: portfolioDraft });
       } else {
         await saveTradePrompt(promptText, ["manual_prompt"]);
       }
@@ -1110,6 +1312,66 @@ function TradesSystemEditor({
     <form className="trades-stack" onSubmit={(event) => void save(event)}>
       <fieldset className={`trades-panel settings-grid ${promptMode === "manual" ? "disabled-panel" : ""}`} disabled={promptMode === "manual"}>
         <legend>Settings</legend>
+        <label>
+          Trading platform
+          <select value={portfolioDraft.broker_key || "trade_republic"} onChange={(event) => applyBrokerPreset(event.target.value)}>
+            <option value="trade_republic">Trade Republic</option>
+            <option value="etoro">eToro</option>
+            <option value="custom">Custom</option>
+          </select>
+        </label>
+        <label>
+          Broker name
+          <input value={portfolioDraft.broker || ""} onChange={(event) => setPortfolioDraftField("broker", event.target.value)} />
+        </label>
+        <label>
+          Base currency
+          <input value={portfolioDraft.base_currency || "EUR"} onChange={(event) => setPortfolioDraftField("base_currency", event.target.value.toUpperCase())} />
+        </label>
+        <label>
+          Fixed order fee
+          <input
+            type="number"
+            value={Number(parseBrokerFeeModel(portfolioDraft).fixed_order_fee ?? portfolioDraft.fee_per_trade ?? 0)}
+            onChange={(event) => setBrokerFeeField("fixed_order_fee", Number(event.target.value))}
+          />
+        </label>
+        <label>
+          Percent fee
+          <input
+            type="number"
+            value={Number(parseBrokerFeeModel(portfolioDraft).percent_order_fee ?? 0)}
+            onChange={(event) => setBrokerFeeField("percent_order_fee", Number(event.target.value))}
+          />
+        </label>
+        <label>
+          Minimum fee
+          <input
+            type="number"
+            value={Number(parseBrokerFeeModel(portfolioDraft).minimum_order_fee ?? 0)}
+            onChange={(event) => setBrokerFeeField("minimum_order_fee", Number(event.target.value))}
+          />
+        </label>
+        <label>
+          Crypto fee %
+          <input
+            type="number"
+            value={Number(parseBrokerFeeModel(portfolioDraft).crypto_percent_fee ?? 0)}
+            onChange={(event) => setBrokerFeeField("crypto_percent_fee", Number(event.target.value))}
+          />
+        </label>
+        <label>
+          Pricing source
+          <input value={portfolioDraft.broker_pricing_url || ""} onChange={(event) => setPortfolioDraftField("broker_pricing_url", event.target.value)} />
+        </label>
+        <label className="settings-wide">
+          Broker notes
+          <textarea
+            rows={3}
+            value={String(parseBrokerFeeModel(portfolioDraft).notes || "")}
+            onChange={(event) => setBrokerFeeField("notes", event.target.value)}
+          />
+        </label>
         <label>
           Advice time
           <input value={draft.advice_time} onChange={(event) => setDraftField("advice_time", event.target.value)} />
@@ -1297,6 +1559,37 @@ function TradesSystemEditor({
 
   function setDraftField<K extends keyof TradeSettings>(key: K, value: TradeSettings[K]) {
     setDraft((current) => ({ ...current, [key]: value }));
+  }
+
+  function setPortfolioDraftField<K extends keyof TradePortfolioInfo>(key: K, value: TradePortfolioInfo[K]) {
+    setPortfolioDraft((current) => ({ ...current, [key]: value }));
+  }
+
+  function setBrokerFeeField(key: keyof TradeBrokerFeeModel, value: string | number) {
+    setPortfolioDraft((current) => {
+      const feeModel = { ...parseBrokerFeeModel(current), [key]: value };
+      const nextFixedFee = Number(feeModel.fixed_order_fee ?? current.fee_per_trade ?? 0);
+      return {
+        ...current,
+        fee_per_trade: Number.isFinite(nextFixedFee) ? nextFixedFee : current.fee_per_trade,
+        fee_model_json: JSON.stringify(feeModel),
+        broker_pricing_url:
+          key === "pricing_source_url" && typeof value === "string" ? value : current.broker_pricing_url
+      };
+    });
+  }
+
+  function applyBrokerPreset(key: string) {
+    const preset = clientBrokerPreset(key);
+    setPortfolioDraft((current) => ({
+      ...current,
+      broker_key: preset.broker_key,
+      broker: preset.broker,
+      fee_per_trade: preset.fee_per_trade,
+      fee_model_json: JSON.stringify(preset.fee_model),
+      broker_pricing_url: preset.broker_pricing_url,
+      broker_updated_at: new Date().toISOString()
+    }));
   }
 
   function addCandidate() {
@@ -1549,7 +1842,11 @@ function normalizeSection(section: string): TradesSection {
 }
 
 function formatMoney(value: number, currency = "EUR"): string {
-  return new Intl.NumberFormat("en", { style: "currency", currency }).format(Number(value || 0));
+  try {
+    return new Intl.NumberFormat("en", { style: "currency", currency }).format(Number(value || 0));
+  } catch {
+    return `${Number(value || 0).toFixed(2)} ${currency || "EUR"}`;
+  }
 }
 
 function formatNumber(value: number): string {
@@ -1595,6 +1892,78 @@ function parseJsonArray(value: string | null): unknown[] {
 
 function hasManualPrompt(settings: TradeSettings): boolean {
   return parseJsonArray(settings.overridden_settings_json).includes("manual_prompt");
+}
+
+function parseBrokerFeeModel(portfolio: Partial<TradePortfolioInfo>): Partial<TradeBrokerFeeModel> {
+  try {
+    const parsed = JSON.parse(portfolio.fee_model_json || "{}");
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? (parsed as Partial<TradeBrokerFeeModel>) : {};
+  } catch {
+    return {};
+  }
+}
+
+function clientBrokerPreset(key: string): {
+  broker_key: string;
+  broker: string;
+  fee_per_trade: number;
+  broker_pricing_url: string;
+  fee_model: TradeBrokerFeeModel;
+} {
+  if (key === "etoro") {
+    return {
+      broker_key: "etoro",
+      broker: "eToro",
+      fee_per_trade: 0,
+      broker_pricing_url: "https://www.etoro.com/trading/fees/",
+      fee_model: {
+        fixed_order_fee: 0,
+        fixed_order_fee_currency: "EUR",
+        percent_order_fee: 0,
+        minimum_order_fee: 0,
+        crypto_percent_fee: 1,
+        notes:
+          "eToro default in this app: ETF trades are modelled as zero commission; stock commission can vary by country/exchange and may be 1 or 2 USD per open/close; crypto uses 1% as the standard Bronze/Silver/Gold assumption. Market spreads, FX conversion, CFD, withdrawal, and tax costs can still apply.",
+        pricing_source_url: "https://www.etoro.com/trading/fees/",
+        updated_from_source_at: "2026-06-04"
+      }
+    };
+  }
+
+  if (key === "custom") {
+    return {
+      broker_key: "custom",
+      broker: "Custom broker",
+      fee_per_trade: 0,
+      broker_pricing_url: "",
+      fee_model: {
+        fixed_order_fee: 0,
+        fixed_order_fee_currency: "EUR",
+        percent_order_fee: 0,
+        minimum_order_fee: 0,
+        notes: "Custom broker fee model. Edit this to match the platform execution screen.",
+        pricing_source_url: "",
+        updated_from_source_at: "2026-06-04"
+      }
+    };
+  }
+
+  return {
+    broker_key: "trade_republic",
+    broker: "Trade Republic",
+    fee_per_trade: 1,
+    broker_pricing_url: "https://support.traderepublic.com/en-de/809-Cosa-sono-le-informazioni-sui-costi-ex_post",
+    fee_model: {
+      fixed_order_fee: 1,
+      fixed_order_fee_currency: "EUR",
+      percent_order_fee: 0,
+      minimum_order_fee: 1,
+      notes:
+        "Trade Republic default: no order commission for securities; 1 EUR external settlement cost per single trade. Product costs, spreads, and third-party costs can still apply.",
+      pricing_source_url: "https://support.traderepublic.com/en-de/809-Cosa-sono-le-informazioni-sui-costi-ex_post",
+      updated_from_source_at: "2026-06-04"
+    }
+  };
 }
 
 const defaultImportExample = `Cash: 1250 EUR

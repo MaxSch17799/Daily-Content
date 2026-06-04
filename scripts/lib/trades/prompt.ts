@@ -3,20 +3,22 @@ export function buildNewsPrompt({
   positions,
   candidates = [],
   enabledAssetTypes = [],
-  searchMode
+  searchMode,
+  brokerName = "the configured broker"
 }: {
   date: string;
   positions: Array<{ symbol: string; name: string; asset_type: string }>;
   candidates?: Array<{ symbol: string; name: string; asset_type: string }>;
   enabledAssetTypes?: string[];
   searchMode: string;
+  brokerName?: string;
 }): string {
   const trackedAssets = [
     ...positions.map((position) => ({ label: "holding", ...position })),
     ...candidates.map((candidate) => ({ label: "candidate", ...candidate }))
   ];
   return [
-    "Prepare a concise pre-market research brief for a personal Trade Republic portfolio.",
+    `Prepare a concise pre-market research brief for a personal ${brokerName} portfolio.`,
     `Date: ${date}`,
     "Region: Europe/Berlin",
     `Search mode: ${searchMode}`,
@@ -30,7 +32,7 @@ export function buildNewsPrompt({
     "",
     "The seed ideas are not a whitelist. Also search for other reasonable enabled-asset buy ideas even if Trade Republic availability is unknown.",
     "For possible buy ideas, include ticker/name, asset type, why it is relevant now, latest market price or price range if available, currency, and source URL.",
-    "If you cannot verify Trade Republic availability, say that availability needs checking rather than excluding the idea.",
+    `If you cannot verify ${brokerName} availability, say that availability needs checking rather than excluding the idea.`,
     "Avoid forums, rumors, and promotional stock-picking pages.",
     "End with a DISCOVERED_IDEAS section using one line per idea:",
     "symbol: TICKER | name: Company or fund name | asset_type: stock/etf/crypto | why: short reason | price: latest public price | currency: ISO currency | source_title: source title | source_url: URL",
@@ -40,34 +42,49 @@ export function buildNewsPrompt({
 
 export function buildAdvicePrompt(input: {
   settings: TradePromptSettings;
+  portfolio?: TradePromptPortfolio;
   snapshot: unknown;
   newsSummary: string;
   previousAdvice: unknown[];
   unavailableAssets: unknown[];
   promptText: string;
+  adviceMode?: string;
 }): string {
-  const instructionPrompt = input.promptText.trim() || buildSettingsInstructionPrompt(input.settings);
+  const brokerName = input.portfolio?.broker || "the configured broker";
+  const instructionPrompt = input.promptText.trim() || buildSettingsInstructionPrompt(input.settings, input.portfolio);
+  const deployAllCashText =
+    input.adviceMode === "deploy_all_cash"
+      ? [
+          "",
+          "Deploy-all-cash run",
+          "This run was explicitly requested as deploy_all_cash. Aim to invest as much available cash as possible while still making a defensible recommendation. Prefer using most or all available cash across the best enabled buys, respect all broker fees, minimum trade, and fractional rules, avoid negative cash, and do not buy weak ideas just to spend cash."
+        ].join("\n")
+      : "";
   return [
     instructionPrompt,
+    deployAllCashText,
     "",
-    "Use this data carefully. Do not invent holdings, cash, executed trades, or confirmed Trade Republic availability.",
+    `Use this data carefully. Do not invent holdings, cash, executed trades, or confirmed ${brokerName} availability.`,
     "Optional seed ideas are in snapshot.candidate_assets. Web-discovered quoted ideas are in snapshot.discovered_assets. Current holdings are in snapshot.holdings.",
     "The seed ideas are not a whitelist. You may recommend newly researched enabled-asset buys from the news context even if they are not in snapshot.candidate_assets.",
-    "For newly suggested assets, set trade_republic_availability to needs_check unless the context explicitly confirms availability.",
+    "For newly suggested assets, set trade_republic_availability to needs_check unless the context explicitly confirms broker availability. This legacy field means configured-broker availability.",
     "For buy sizing, first use quote_for_cash.price from snapshot.discovered_assets or a quote.price from snapshot.candidate_assets when available.",
     "quote_for_cash.price is already converted to EUR for cash math. Use estimated_price in EUR when quote_for_cash exists and explain the original quote/currency in reason or cash_math.",
-    "Unknown Trade Republic availability must not block a buy recommendation; mark trade_republic_availability as needs_check and warn the user to verify availability and the final in-app price before execution.",
+    `Unknown ${brokerName} availability must not block a buy recommendation; mark trade_republic_availability as needs_check and warn the user to verify availability and the final in-app price before execution.`,
     "Only return watch instead of buy when no usable public quote, source price, or EUR cash quote exists.",
     "If a buy or sell is recommended, the quantity must be concrete and executable from the cash/sell plan.",
     "For buy and sell recommendations, quantity, estimated_price, estimated_gross_amount, estimated_fee, estimated_cash_effect, reason, cash_math, and sources must be filled.",
     "For hold/watch recommendations, use quantity 0, gross amount 0, fee 0, and cash effect 0.",
-    "The final plan must not make cash negative after all buys, sells, and 1 EUR transaction fees.",
+    "The final plan must not make cash negative after all buys, sells, and configured broker fees.",
     "",
     "Portfolio snapshot JSON:",
     JSON.stringify(input.snapshot, null, 2),
     "",
     "Settings JSON:",
     JSON.stringify(input.settings, null, 2),
+    "",
+    "Portfolio and broker JSON:",
+    JSON.stringify(input.portfolio || null, null, 2),
     "",
     "News context:",
     input.newsSummary || "No web context available.",
@@ -96,7 +113,16 @@ export interface TradePromptSettings {
   web_search_mode: string;
 }
 
-export function buildSettingsInstructionPrompt(settings: TradePromptSettings): string {
+export interface TradePromptPortfolio {
+  base_currency?: string;
+  broker?: string;
+  broker_key?: string;
+  fee_per_trade?: number;
+  fee_model_json?: string;
+  broker_pricing_url?: string;
+}
+
+export function buildSettingsInstructionPrompt(settings: TradePromptSettings, portfolio?: TradePromptPortfolio): string {
   const enabledAssets = [
     Number(settings.stocks_enabled) === 1 ? "stocks" : "",
     Number(settings.etfs_enabled) === 1 ? "ETFs" : "",
@@ -107,10 +133,10 @@ export function buildSettingsInstructionPrompt(settings: TradePromptSettings): s
 
   return [
     "Role and objective",
-    "You are a cautious trading decision-support assistant for a personal Trade Republic portfolio. You do not place trades. You produce a concrete plan the user can review manually.",
+    `You are a cautious trading decision-support assistant for a personal ${portfolio?.broker || "broker"} portfolio. You do not place trades. You produce a concrete plan the user can review manually.`,
     "",
     "Broker and fees",
-    "Trade Republic charges 1 EUR per buy or sell transaction. Include this fee in every buy/sell cash calculation and avoid tiny trades where the fee makes the idea inefficient.",
+    buildBrokerFeeText(portfolio),
     "",
     "Enabled asset types",
     `Enabled asset types: ${enabledAssets || "none"}. Do not recommend disabled asset types. If no asset type is enabled, return no buy ideas and explain why. You may suggest enabled assets outside the optional seed list and mark Trade Republic availability as needs_check when unknown.`,
@@ -119,7 +145,7 @@ export function buildSettingsInstructionPrompt(settings: TradePromptSettings): s
     `You may deploy up to ${settings.max_cash_deploy_pct}% of available cash if justified. If buys need more cash than available, pair them with specific sells. Never create negative cash.`,
     "",
     "Minimum trade",
-    `Default minimum trade size is ${settings.min_trade_value} EUR. For buy/sell actions, give a concrete quantity, estimated price, gross amount, 1 EUR fee, and total cash effect.`,
+    `Default minimum trade size is ${settings.min_trade_value} EUR. For buy/sell actions, give a concrete quantity, estimated price, gross amount, configured broker fee, and total cash effect.`,
     "",
     "Fractional shares",
     buildFractionalText(settings),
@@ -133,6 +159,38 @@ export function buildSettingsInstructionPrompt(settings: TradePromptSettings): s
     "Output format",
     "Return only valid JSON matching the configured schema. Every buy or sell recommendation must include quantity, estimated_price, estimated_gross_amount, estimated_fee, estimated_cash_effect, reason, cash_math, and at least one source object when news or web context influenced the recommendation."
   ].join("\n");
+}
+
+function buildBrokerFeeText(portfolio?: TradePromptPortfolio): string {
+  const feeModel = parseFeeModel(portfolio?.fee_model_json);
+  const broker = portfolio?.broker || "the configured broker";
+  const baseCurrency = portfolio?.base_currency || "EUR";
+  const fixedFee = Number(feeModel.fixed_order_fee ?? portfolio?.fee_per_trade ?? 1);
+  const fixedCurrency = String(feeModel.fixed_order_fee_currency || baseCurrency || "EUR").toUpperCase();
+  const percentFee = Number(feeModel.percent_order_fee ?? 0);
+  const minimumFee = Number(feeModel.minimum_order_fee ?? 0);
+  const cryptoFee = feeModel.crypto_percent_fee === undefined ? "" : ` Crypto trades should include the configured ${feeModel.crypto_percent_fee}% crypto fee when crypto is enabled.`;
+  const notes = String(feeModel.notes || "");
+  return [
+    `Trading platform: ${broker}. Base currency: ${baseCurrency}.`,
+    `Fee model: fixed order fee ${fixedFee} ${fixedCurrency}; percentage order fee ${percentFee}%; minimum order fee ${minimumFee} ${fixedCurrency}.${cryptoFee}`,
+    "Apply the configured fee model to every buy or sell cash calculation and avoid tiny trades where fees make the idea inefficient.",
+    notes ? `Broker notes: ${notes}` : ""
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
+function parseFeeModel(value: string | undefined): Record<string, unknown> {
+  if (!value) {
+    return {};
+  }
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : {};
+  } catch {
+    return {};
+  }
 }
 
 function buildFractionalText(settings: TradePromptSettings): string {

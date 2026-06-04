@@ -1,6 +1,6 @@
 import type { FunctionContext } from "../../../_lib/context";
 import { jsonResponse, readJson } from "../../../_lib/response";
-import { isTradeSession, loadTradeSettings, requireTradeSession } from "../../../_lib/trades";
+import { isTradeSession, loadTradePortfolio, loadTradeSettings, requireTradeSession } from "../../../_lib/trades";
 
 interface PromptSettings {
   risk_profile: string;
@@ -16,6 +16,15 @@ interface PromptSettings {
   web_search_mode: string;
 }
 
+interface PromptPortfolio {
+  base_currency?: string;
+  broker?: string;
+  broker_key?: string;
+  fee_per_trade?: number;
+  fee_model_json?: string;
+  broker_pricing_url?: string;
+}
+
 export const onRequestPost = async ({ env, request }: FunctionContext) => {
   const session = await requireTradeSession(env, request);
   if (!isTradeSession(session)) {
@@ -23,8 +32,10 @@ export const onRequestPost = async ({ env, request }: FunctionContext) => {
   }
 
   const current = await loadTradeSettings(env, session.portfolioId);
-  const body = await readOptionalJson<{ settings?: Partial<PromptSettings> }>(request);
+  const currentPortfolio = await loadTradePortfolio(env, session.portfolioId);
+  const body = await readOptionalJson<{ settings?: Partial<PromptSettings>; portfolio?: Partial<PromptPortfolio> }>(request);
   const settings = { ...current, ...(body.settings || {}) } as PromptSettings;
+  const portfolio = { ...currentPortfolio, ...(body.portfolio || {}) } as PromptPortfolio;
   const [positions, cash, previousAdvice, previousTransactions, unavailableAssets] = await Promise.all([
     env.DB.prepare(
       `SELECT asset_type, symbol, name, isin, quantity, current_value, currency, provider, provider_symbol, updated_at
@@ -65,12 +76,12 @@ export const onRequestPost = async ({ env, request }: FunctionContext) => {
       .bind(session.portfolioId)
       .all()
   ]);
-  const blocks = buildPromptBlocks(settings);
+  const blocks = buildPromptBlocks(settings, portfolio);
   const instructionPrompt = blocks.map((block) => `${block.section}\n${block.current_text}`).join("\n\n");
 
   return jsonResponse({
     blocks,
-    promptText: buildPromptPreview(instructionPrompt, settings, {
+    promptText: buildPromptPreview(instructionPrompt, settings, portfolio, {
       snapshot: {
         cash: cash.results ?? [],
         holdings: positions.results ?? [],
@@ -89,7 +100,7 @@ export const onRequestPost = async ({ env, request }: FunctionContext) => {
   });
 };
 
-function buildPromptBlocks(settings: PromptSettings) {
+function buildPromptBlocks(settings: PromptSettings, portfolio: PromptPortfolio) {
   const enabledAssets = [
     Number(settings.stocks_enabled) === 1 ? "stocks" : "",
     Number(settings.etfs_enabled) === 1 ? "ETFs" : "",
@@ -102,17 +113,17 @@ function buildPromptBlocks(settings: PromptSettings) {
     [
       "role.objective",
       "Role and objective",
-      "You are a cautious trading decision-support assistant for a personal Trade Republic portfolio. You do not place trades. You produce a concrete plan the user can review manually."
+      `You are a cautious trading decision-support assistant for a personal ${portfolio.broker || "broker"} portfolio. You do not place trades. You produce a concrete plan the user can review manually.`
     ],
     [
       "broker.fees",
       "Broker and fees",
-      "Trade Republic charges 1 EUR per buy or sell transaction. Include this fee in every buy/sell cash calculation and avoid tiny trades where the fee makes the idea inefficient."
+      buildBrokerFeeText(portfolio)
     ],
     [
       "assets.enabled",
       "Enabled asset types",
-      `Enabled asset types: ${enabledAssets || "none"}. Do not recommend disabled asset types. If no asset type is enabled, return no buy ideas and explain why. You may suggest enabled assets outside the optional seed list and mark Trade Republic availability as needs_check when unknown.`
+      `Enabled asset types: ${enabledAssets || "none"}. Do not recommend disabled asset types. If no asset type is enabled, return no buy ideas and explain why. You may suggest enabled assets outside the optional seed list and mark broker availability as needs_check when unknown.`
     ],
     [
       "cash.deployment",
@@ -122,7 +133,7 @@ function buildPromptBlocks(settings: PromptSettings) {
     [
       "trade.minimum",
       "Minimum trade",
-      `Default minimum trade size is ${settings.min_trade_value} EUR. For buy/sell actions, give a concrete quantity, estimated price, gross amount, 1 EUR fee, and total cash effect.`
+      `Default minimum trade size is ${settings.min_trade_value} EUR. For buy/sell actions, give a concrete quantity, estimated price, gross amount, configured broker fee, and total cash effect.`
     ],
     [
       "fractional.increment",
@@ -193,6 +204,7 @@ function capitalize(value: string): string {
 function buildPromptPreview(
   instructionPrompt: string,
   settings: PromptSettings,
+  portfolio: PromptPortfolio,
   runtime: { snapshot: unknown; previousAdvice: unknown[]; unavailableAssets: unknown[] }
 ): string {
   return [
@@ -206,6 +218,9 @@ function buildPromptPreview(
     "Settings JSON:",
     JSON.stringify(settings, null, 2),
     "",
+    "Portfolio and broker JSON:",
+    JSON.stringify(portfolio, null, 2),
+    "",
     "News context:",
     settings.web_search_mode === "none"
       ? "No web context will be requested."
@@ -214,11 +229,40 @@ function buildPromptPreview(
     "Previous advice and actual follow-through:",
     JSON.stringify(runtime.previousAdvice, null, 2),
     "",
-    "Unavailable Trade Republic assets:",
+    "Unavailable broker assets:",
     JSON.stringify(runtime.unavailableAssets, null, 2),
     "",
     "The live run details panel shows the exact full prompt and exact response saved for each AI call."
   ].join("\n");
+}
+
+function buildBrokerFeeText(portfolio: PromptPortfolio): string {
+  const feeModel = parseJsonObject(portfolio.fee_model_json || "{}");
+  const broker = portfolio.broker || "the configured broker";
+  const baseCurrency = portfolio.base_currency || "EUR";
+  const fixedFee = Number(feeModel.fixed_order_fee ?? portfolio.fee_per_trade ?? 1);
+  const fixedCurrency = String(feeModel.fixed_order_fee_currency || baseCurrency || "EUR").toUpperCase();
+  const percentFee = Number(feeModel.percent_order_fee ?? 0);
+  const minimumFee = Number(feeModel.minimum_order_fee ?? 0);
+  const cryptoFee = feeModel.crypto_percent_fee === undefined ? "" : ` Crypto trades should include the configured ${feeModel.crypto_percent_fee}% crypto fee when crypto is enabled.`;
+  const notes = String(feeModel.notes || "");
+  return [
+    `Trading platform: ${broker}. Base currency: ${baseCurrency}.`,
+    `Fee model: fixed order fee ${fixedFee} ${fixedCurrency}; percentage order fee ${percentFee}%; minimum order fee ${minimumFee} ${fixedCurrency}.${cryptoFee}`,
+    "Apply the configured fee model to every buy or sell cash calculation and avoid tiny trades where fees make the idea inefficient.",
+    notes ? `Broker notes: ${notes}` : ""
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
+function parseJsonObject(value: string): Record<string, unknown> {
+  try {
+    const parsed = JSON.parse(value || "{}");
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : {};
+  } catch {
+    return {};
+  }
 }
 
 async function readOptionalJson<T>(request: Request): Promise<T> {

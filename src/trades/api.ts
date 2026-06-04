@@ -24,8 +24,35 @@ export interface TradeSettings {
   updated_at: string;
 }
 
+export interface TradeBrokerFeeModel {
+  fixed_order_fee: number;
+  fixed_order_fee_currency: string;
+  percent_order_fee: number;
+  minimum_order_fee: number;
+  crypto_percent_fee?: number;
+  notes: string;
+  pricing_source_url?: string;
+  updated_from_source_at?: string;
+}
+
+export interface TradePortfolioInfo {
+  id: string;
+  user_id: string;
+  name: string;
+  base_currency: string;
+  broker: string;
+  broker_key: string;
+  fee_per_trade: number;
+  fee_model_json: string;
+  broker_pricing_url: string;
+  broker_updated_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export type TradeSettingsSave = Partial<Omit<TradeSettings, "overridden_settings_json">> & {
   overridden_settings_json?: unknown[] | string;
+  portfolio?: Partial<TradePortfolioInfo>;
 };
 
 export interface TradeCandidateAsset {
@@ -67,6 +94,29 @@ export interface TradePosition {
 export interface TradeCash {
   currency: string;
   amount: number;
+}
+
+export interface TradePortfolioSnapshot {
+  id: string;
+  snapshot_date: string;
+  cash_value: number;
+  holdings_value: number;
+  total_value: number;
+  created_at: string;
+}
+
+export interface TradeMarketQuote {
+  id: string;
+  symbol: string;
+  provider: string;
+  provider_symbol: string;
+  asset_type: string;
+  price: number;
+  currency: string;
+  market_time: string | null;
+  fetched_at: string;
+  stale: number;
+  raw_json: string;
 }
 
 export interface ParsedHolding {
@@ -111,6 +161,7 @@ export interface TradeRecommendation {
 export interface AdviceRun {
   id: string;
   run_date: string;
+  run_type?: string;
   status: string;
   summary: string | null;
   benchmark_json: string;
@@ -211,8 +262,11 @@ export async function fetchTradesPortfolio(): Promise<{
   cash: TradeCash[];
   positions: TradePosition[];
   settings: TradeSettings;
+  portfolio: TradePortfolioInfo;
   latestAdvice: AdviceRun | null;
   latestSnapshot: unknown;
+  snapshots: TradePortfolioSnapshot[];
+  latestQuotes: TradeMarketQuote[];
 }> {
   return tradesFetch("/api/trades/portfolio");
 }
@@ -233,23 +287,27 @@ export async function commitPortfolioImport(rawText: string, cash: number, holdi
 
 export async function fetchTradesSettings(): Promise<{
   settings: TradeSettings;
+  portfolio: TradePortfolioInfo;
   unavailableAssets: unknown[];
   candidateAssets: TradeCandidateAsset[];
 }> {
   return tradesFetch("/api/trades/settings");
 }
 
-export async function saveTradesSettings(settings: TradeSettingsSave): Promise<{ settings: TradeSettings }> {
+export async function saveTradesSettings(settings: TradeSettingsSave): Promise<{ settings: TradeSettings; portfolio: TradePortfolioInfo }> {
   return tradesFetch("/api/trades/settings", {
     method: "POST",
     body: JSON.stringify(settings)
   });
 }
 
-export async function renderTradePrompt(settings?: Partial<TradeSettings>): Promise<{ promptText: string; blocks: unknown[] }> {
+export async function renderTradePrompt(
+  settings?: Partial<TradeSettings>,
+  portfolio?: Partial<TradePortfolioInfo>
+): Promise<{ promptText: string; blocks: unknown[] }> {
   return tradesFetch("/api/trades/prompt/render", {
     method: "POST",
-    body: JSON.stringify({ settings })
+    body: JSON.stringify({ settings, portfolio })
   });
 }
 
@@ -279,8 +337,14 @@ export async function fetchTradeAdvice(): Promise<{
   return tradesFetch("/api/trades/advice");
 }
 
-export async function runTradeAdviceNow(): Promise<{ ok: boolean; runId: string; status: string; alreadyRunning: boolean }> {
-  return tradesFetch("/api/trades/advice/run", { method: "POST" });
+export async function runTradeAdviceNow(
+  mode: "normal" | "deploy_all_cash" = "normal"
+): Promise<{ ok: boolean; runId: string; status: string; alreadyRunning: boolean; adviceMode?: string }> {
+  return tradesFetch("/api/trades/advice/run", { method: "POST", body: JSON.stringify({ mode }) });
+}
+
+export async function refreshTradeQuotes(): Promise<{ ok: boolean; snapshot: unknown; quotes: unknown[] }> {
+  return tradesFetch("/api/trades/quotes/refresh", { method: "POST" });
 }
 
 export async function fetchTradeAdviceProgress(runId?: string): Promise<{

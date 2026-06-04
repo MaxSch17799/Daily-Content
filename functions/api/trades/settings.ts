@@ -1,6 +1,14 @@
 import type { FunctionContext } from "../../_lib/context";
 import { jsonResponse, readJson } from "../../_lib/response";
-import { isTradeSession, loadTradeSettings, requireTradeSession } from "../../_lib/trades";
+import {
+  brokerPreset,
+  isTradeSession,
+  loadTradePortfolio,
+  loadTradeSettings,
+  requireTradeSession,
+  safeJsonParse,
+  type TradeBrokerFeeModel
+} from "../../_lib/trades";
 
 interface SettingsBody {
   advice_time?: string;
@@ -19,6 +27,16 @@ interface SettingsBody {
   benchmark_name?: string;
   prompt_text?: string;
   overridden_settings_json?: unknown[];
+  portfolio?: PortfolioBody;
+}
+
+interface PortfolioBody {
+  broker_key?: string;
+  broker?: string;
+  base_currency?: string;
+  fee_per_trade?: number;
+  fee_model_json?: string | Partial<TradeBrokerFeeModel>;
+  broker_pricing_url?: string;
 }
 
 export const onRequestGet = async ({ env, request }: FunctionContext) => {
@@ -27,6 +45,7 @@ export const onRequestGet = async ({ env, request }: FunctionContext) => {
     return session;
   }
   const settings = await loadTradeSettings(env, session.portfolioId);
+  const portfolio = await loadTradePortfolio(env, session.portfolioId);
   const unavailable = await env.DB.prepare(
     "SELECT id, asset_type, symbol, name, reason, created_at, updated_at FROM trade_unavailable_assets WHERE portfolio_id = ? ORDER BY symbol"
   )
@@ -40,7 +59,7 @@ export const onRequestGet = async ({ env, request }: FunctionContext) => {
   )
     .bind(session.portfolioId)
     .all();
-  return jsonResponse({ settings, unavailableAssets: unavailable.results ?? [], candidateAssets: candidates.results ?? [] });
+  return jsonResponse({ settings, portfolio, unavailableAssets: unavailable.results ?? [], candidateAssets: candidates.results ?? [] });
 };
 
 export const onRequestPost = async ({ env, request }: FunctionContext) => {
@@ -51,6 +70,7 @@ export const onRequestPost = async ({ env, request }: FunctionContext) => {
 
   const body = await readJson<SettingsBody>(request);
   const current = await loadTradeSettings(env, session.portfolioId);
+  const currentPortfolio = await loadTradePortfolio(env, session.portfolioId);
   const next = {
     advice_time: cleanTime(body.advice_time ?? current.advice_time),
     timezone: String(body.timezone ?? (current.timezone || "Europe/Berlin")),
@@ -106,7 +126,32 @@ export const onRequestPost = async ({ env, request }: FunctionContext) => {
     )
     .run();
 
-  return jsonResponse({ ok: true, settings: await loadTradeSettings(env, session.portfolioId) });
+  if (body.portfolio) {
+    const nextPortfolio = cleanPortfolio(body.portfolio, currentPortfolio);
+    await env.DB.prepare(
+      `UPDATE trade_portfolios
+       SET broker_key = ?, broker = ?, base_currency = ?, fee_per_trade = ?,
+           fee_model_json = ?, broker_pricing_url = ?, broker_updated_at = datetime('now'),
+           updated_at = datetime('now')
+       WHERE id = ?`
+    )
+      .bind(
+        nextPortfolio.broker_key,
+        nextPortfolio.broker,
+        nextPortfolio.base_currency,
+        nextPortfolio.fee_per_trade,
+        nextPortfolio.fee_model_json,
+        nextPortfolio.broker_pricing_url,
+        session.portfolioId
+      )
+      .run();
+  }
+
+  return jsonResponse({
+    ok: true,
+    settings: await loadTradeSettings(env, session.portfolioId),
+    portfolio: await loadTradePortfolio(env, session.portfolioId)
+  });
 };
 
 function boolToInt(value: boolean | number | string | undefined, fallback: number): number {
@@ -128,7 +173,7 @@ function boolToInt(value: boolean | number | string | undefined, fallback: numbe
   return fallback;
 }
 
-function finiteNumber(value: number | undefined, fallback: number, min: number, max: number): number {
+function finiteNumber(value: unknown, fallback: number, min: number, max: number): number {
   const number = Number(value);
   if (!Number.isFinite(number)) {
     return fallback;
@@ -153,4 +198,47 @@ function parseJsonArray(value: unknown): unknown[] {
   } catch {
     return [];
   }
+}
+
+function cleanPortfolio(body: PortfolioBody, current: Awaited<ReturnType<typeof loadTradePortfolio>>) {
+  const requestedKey = String(body.broker_key || current.broker_key || "trade_republic");
+  const brokerKey = ["trade_republic", "etoro", "custom"].includes(requestedKey) ? requestedKey : "custom";
+  const preset = brokerPreset(brokerKey);
+  const currentModel = safeJsonParse<Partial<TradeBrokerFeeModel>>(current.fee_model_json, preset.fee_model);
+  const rawModel =
+    typeof body.fee_model_json === "string"
+      ? safeJsonParse<Partial<TradeBrokerFeeModel>>(body.fee_model_json, {})
+      : body.fee_model_json && typeof body.fee_model_json === "object"
+        ? body.fee_model_json
+        : {};
+  const fixedFee = finiteNumber(rawModel.fixed_order_fee ?? body.fee_per_trade, preset.fee_per_trade, 0, 10_000);
+  const percentFee = finiteNumber(rawModel.percent_order_fee, currentModel.percent_order_fee ?? preset.fee_model.percent_order_fee, 0, 100);
+  const minimumFee = finiteNumber(rawModel.minimum_order_fee, currentModel.minimum_order_fee ?? preset.fee_model.minimum_order_fee, 0, 10_000);
+  const cryptoPercentFee =
+    rawModel.crypto_percent_fee === undefined
+      ? currentModel.crypto_percent_fee ?? preset.fee_model.crypto_percent_fee
+      : finiteNumber(rawModel.crypto_percent_fee, preset.fee_model.crypto_percent_fee || 0, 0, 100);
+  const pricingUrl = String(rawModel.pricing_source_url || body.broker_pricing_url || preset.broker_pricing_url || "").trim();
+  const feeModel: TradeBrokerFeeModel = {
+    ...preset.fee_model,
+    ...currentModel,
+    ...rawModel,
+    fixed_order_fee: fixedFee,
+    fixed_order_fee_currency: String(rawModel.fixed_order_fee_currency || currentModel.fixed_order_fee_currency || "EUR").trim().toUpperCase(),
+    percent_order_fee: percentFee,
+    minimum_order_fee: minimumFee,
+    crypto_percent_fee: cryptoPercentFee,
+    notes: String(rawModel.notes || currentModel.notes || preset.fee_model.notes || "").slice(0, 2000),
+    pricing_source_url: pricingUrl,
+    updated_from_source_at: String(rawModel.updated_from_source_at || preset.fee_model.updated_from_source_at || "")
+  };
+
+  return {
+    broker_key: brokerKey,
+    broker: brokerKey === "custom" ? String(body.broker || current.broker || "Custom broker").trim().slice(0, 80) : preset.broker,
+    base_currency: String(body.base_currency || current.base_currency || "EUR").trim().toUpperCase().slice(0, 3) || "EUR",
+    fee_per_trade: fixedFee,
+    fee_model_json: JSON.stringify(feeModel),
+    broker_pricing_url: pricingUrl
+  };
 }

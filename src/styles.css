@@ -683,6 +683,10 @@ th {
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
 }
 
+.settings-wide {
+  grid-column: 1 / -1;
+}
+
 .disabled-panel {
   opacity: 0.66;
 }
@@ -895,6 +899,117 @@ th {
   overflow-wrap: anywhere;
 }
 
+.portfolio-chart {
+  display: grid;
+  gap: 10px;
+}
+
+.portfolio-chart svg {
+  width: 100%;
+  min-height: 190px;
+  max-height: 260px;
+  border: 1px solid rgba(31, 41, 55, 0.12);
+  border-radius: 8px;
+  background: #f9fafb;
+}
+
+.portfolio-chart line {
+  stroke: rgba(31, 41, 55, 0.18);
+  stroke-width: 1.5;
+}
+
+.portfolio-chart polyline {
+  fill: none;
+  stroke: #2563eb;
+  stroke-width: 4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.portfolio-chart circle {
+  fill: #111827;
+  stroke: #f9fafb;
+  stroke-width: 2;
+}
+
+.chart-meta {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  color: #4b5563;
+}
+
+.chart-meta strong {
+  color: #111827;
+}
+
+.positive {
+  color: #166534;
+}
+
+.negative {
+  color: #991b1b;
+}
+
+.empty-chart {
+  display: grid;
+  min-height: 170px;
+  place-items: center;
+  border: 1px dashed rgba(31, 41, 55, 0.2);
+  border-radius: 8px;
+  color: #4b5563;
+  background: #f9fafb;
+}
+
+.allocation-list {
+  display: grid;
+  gap: 12px;
+}
+
+.allocation-row {
+  display: grid;
+  gap: 7px;
+}
+
+.allocation-label {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: #4b5563;
+}
+
+.allocation-label strong {
+  color: #111827;
+  overflow-wrap: anywhere;
+}
+
+.allocation-track {
+  height: 10px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #e5e7eb;
+}
+
+.allocation-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #2563eb;
+}
+
+.allocation-fill.cash {
+  background: #4b5563;
+}
+
+.allocation-fill.etf {
+  background: #0f766e;
+}
+
+.allocation-fill.crypto {
+  background: #b45309;
+}
+
 .json-preview {
   max-height: 360px;
   overflow: auto;
@@ -970,6 +1085,16 @@ th {
   .mode-editor-header {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .chart-meta {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .allocation-label {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 4px;
   }
 
   .admin-archive-item {
