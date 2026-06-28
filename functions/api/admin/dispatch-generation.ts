@@ -2,11 +2,16 @@ import type { FunctionContext } from "../../_lib/context";
 import type { Env } from "../../_lib/types";
 import { requireAdmin } from "../../_lib/auth";
 import { errorResponse, jsonResponse } from "../../_lib/response";
+import { getSetting } from "../../_lib/settings";
 
 export const onRequestPost = async ({ env, request }: FunctionContext) => {
   const blocked = requireAdmin(env, request);
   if (blocked) {
     return blocked;
+  }
+
+  if ((await getSetting(env, "generation_paused", "0")) === "1") {
+    return errorResponse(409, "generation_paused", "Generation is paused in admin.");
   }
 
   if (!env.GITHUB_OWNER || !env.GITHUB_REPO || !env.GITHUB_WORKFLOW_ID || !env.GITHUB_DISPATCH_TOKEN) {

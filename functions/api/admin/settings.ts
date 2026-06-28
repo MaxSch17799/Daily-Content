@@ -7,7 +7,11 @@ import { setSetting } from "../../_lib/settings";
 interface SettingsBody {
   activeMode?: string;
   publicLock?: boolean;
+  generationPaused?: boolean;
+  homepageMode?: string;
 }
+
+const homepageModes = new Set(["latest", "archive_cycle"]);
 
 export const onRequestPost = async ({ env, request }: FunctionContext) => {
   const blocked = requireAdmin(env, request);
@@ -31,6 +35,20 @@ export const onRequestPost = async ({ env, request }: FunctionContext) => {
     const value = body.publicLock ? "1" : "0";
     await setSetting(env, "public_lock", value);
     changed.publicLock = value;
+  }
+
+  if (typeof body.generationPaused === "boolean") {
+    const value = body.generationPaused ? "1" : "0";
+    await setSetting(env, "generation_paused", value);
+    changed.generationPaused = value;
+  }
+
+  if (typeof body.homepageMode === "string") {
+    if (!homepageModes.has(body.homepageMode)) {
+      return errorResponse(400, "bad_homepage_mode", "Homepage mode is not supported.");
+    }
+    await setSetting(env, "homepage_mode", body.homepageMode);
+    changed.homepageMode = body.homepageMode;
   }
 
   return jsonResponse({ ok: true, changed });

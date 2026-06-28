@@ -52,6 +52,7 @@ Current migrations:
 - `0002_allow_multiple_items_per_day.sql`: removes the unique-per-date item constraint.
 - `0003_add_absurd_tech_breakthrough_mode.sql`: adds the absurd technology breakthrough mode.
 - `0004_editable_modes.sql`: adds the editable-mode index and safely seeds current YAML mode templates without overwriting existing D1 rows.
+- `0010_pause_and_archive_cycle.sql`: adds settings for pausing generation and rotating archived homepage posts.
 
 ## Sync Mode Configs
 
@@ -94,3 +95,5 @@ The migration sets:
 - `active_language = en`
 - `public_lock = 0`
 - `timezone = Europe/Berlin`
+- `generation_paused = 0`
+- `homepage_mode = latest`

@@ -32,9 +32,6 @@ async function main() {
   const accountId = requiredEnv("CLOUDFLARE_ACCOUNT_ID");
   const databaseId = requiredEnv("D1_DATABASE_ID");
   const cloudflareToken = requiredEnv("CLOUDFLARE_API_TOKEN");
-  const openaiApiKey = requiredEnv("OPENAI_API_KEY");
-  const bucket = requiredEnv("R2_BUCKET_NAME");
-  const siteUrl = requiredEnv("PUBLIC_SITE_URL").replace(/\/$/, "");
   const timeZone = optionalEnv("APP_TIMEZONE", "Europe/Berlin");
   const language = optionalEnv("DEFAULT_LANGUAGE", "en");
   const today = localDate(timeZone);
@@ -55,6 +52,24 @@ async function main() {
       optionalEnv("DEFAULT_MODE", "fictional_satire_news");
     const activeLanguage =
       (await d1.first<SettingRow>("SELECT value FROM settings WHERE key = 'active_language'"))?.value || language;
+    await d1.query("UPDATE generation_runs SET mode = ? WHERE id = ?", [activeMode, runId]);
+
+    const generationPaused =
+      ((await d1.first<SettingRow>("SELECT value FROM settings WHERE key = 'generation_paused'"))?.value || "0") === "1";
+    if (generationPaused) {
+      await finishRun(
+        d1,
+        runId,
+        "skipped",
+        "Generation paused in admin. No OpenAI, R2 upload, or push notification attempted."
+      );
+      console.log("Generation paused in admin.");
+      return;
+    }
+
+    const openaiApiKey = requiredEnv("OPENAI_API_KEY");
+    const bucket = requiredEnv("R2_BUCKET_NAME");
+    const siteUrl = requiredEnv("PUBLIC_SITE_URL").replace(/\/$/, "");
 
     const mode = await loadModeFromD1(d1, activeMode, activeLanguage);
     await d1.query("UPDATE generation_runs SET mode = ? WHERE id = ?", [mode.id, runId]);

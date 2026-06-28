@@ -129,7 +129,12 @@ export async function fetchAdminSummary(adminPassword: string): Promise<AdminSum
 
 export async function updateAdminSettings(
   adminPassword: string,
-  body: { activeMode?: string; publicLock?: boolean }
+  body: {
+    activeMode?: string;
+    publicLock?: boolean;
+    generationPaused?: boolean;
+    homepageMode?: "latest" | "archive_cycle";
+  }
 ): Promise<void> {
   await apiFetch("/api/admin/settings", {
     method: "POST",

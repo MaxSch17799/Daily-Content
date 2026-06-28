@@ -1,4 +1,4 @@
-import { Download, Eye, EyeOff, Info, Lock, Play, Plus, RefreshCw, Save, Upload } from "lucide-react";
+import { Download, Eye, EyeOff, Info, Lock, PauseCircle, Play, Plus, RefreshCw, Save, Upload } from "lucide-react";
 import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import YAML from "yaml";
 import {
@@ -21,6 +21,8 @@ export function AdminPage() {
   const [summary, setSummary] = useState<AdminSummary | null>(null);
   const [activeMode, setActiveMode] = useState("");
   const [publicLock, setPublicLock] = useState(false);
+  const [generationPaused, setGenerationPaused] = useState(false);
+  const [homepageMode, setHomepageMode] = useState<"latest" | "archive_cycle">("latest");
   const [selectedModeId, setSelectedModeId] = useState("");
   const [modeDraft, setModeDraft] = useState<ModeDraft>(() => createEmptyModeDraft());
   const [showModeTips, setShowModeTips] = useState(false);
@@ -49,6 +51,8 @@ export function AdminPage() {
       setSummary(result);
       setActiveMode(result.settings.active_mode || "fictional_satire_news");
       setPublicLock(result.settings.public_lock === "1");
+      setGenerationPaused(result.settings.generation_paused === "1");
+      setHomepageMode(normalizeHomepageMode(result.settings.homepage_mode));
       const nextMode = getSelectedMode(result.modes, preferredModeId || result.settings.active_mode);
       if (nextMode) {
         setSelectedModeId(nextMode.id);
@@ -66,7 +70,7 @@ export function AdminPage() {
     setMessage(null);
     setError(null);
     try {
-      await updateAdminSettings(password, { activeMode, publicLock });
+      await updateAdminSettings(password, { activeMode, publicLock, generationPaused, homepageMode });
       setMessage("Settings saved.");
       await load();
     } catch (err) {
@@ -253,6 +257,14 @@ export function AdminPage() {
               <span>Public lock</span>
               <strong>{summary.settings.public_lock === "1" ? "On" : "Off"}</strong>
             </div>
+            <div className="metric">
+              <span>Generation</span>
+              <strong>{summary.settings.generation_paused === "1" ? "Paused" : "Active"}</strong>
+            </div>
+            <div className="metric">
+              <span>Homepage</span>
+              <strong>{homepageModeLabel(summary.settings.homepage_mode)}</strong>
+            </div>
           </div>
 
           <form className="admin-grid" onSubmit={saveSettings}>
@@ -270,13 +282,28 @@ export function AdminPage() {
               <input type="checkbox" checked={publicLock} onChange={(event) => setPublicLock(event.target.checked)} />
               Require viewer password
             </label>
+            <label className="checkbox-row">
+              <input
+                type="checkbox"
+                checked={generationPaused}
+                onChange={(event) => setGenerationPaused(event.target.checked)}
+              />
+              Pause generation
+            </label>
+            <label>
+              Homepage display
+              <select value={homepageMode} onChange={(event) => setHomepageMode(normalizeHomepageMode(event.target.value))}>
+                <option value="latest">Newest item</option>
+                <option value="archive_cycle">Daily archive rotation</option>
+              </select>
+            </label>
             <button className="primary-button" type="submit">
               <Save size={16} aria-hidden />
               Save settings
             </button>
-            <button className="secondary-button" type="button" onClick={() => void runGenerator()}>
-              <Play size={16} aria-hidden />
-              Run generator
+            <button className="secondary-button" type="button" onClick={() => void runGenerator()} disabled={generationPaused}>
+              {generationPaused ? <PauseCircle size={16} aria-hidden /> : <Play size={16} aria-hidden />}
+              {generationPaused ? "Paused" : "Run generator"}
             </button>
           </form>
 
@@ -459,6 +486,14 @@ function formatMode(mode: string): string {
     .split("_")
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(" ");
+}
+
+function normalizeHomepageMode(value: string | undefined): "latest" | "archive_cycle" {
+  return value === "archive_cycle" ? "archive_cycle" : "latest";
+}
+
+function homepageModeLabel(value: string | undefined): string {
+  return normalizeHomepageMode(value) === "archive_cycle" ? "Archive rotation" : "Newest item";
 }
 
 function createEmptyModeDraft(): ModeDraft {

@@ -16,6 +16,7 @@ These checks have already passed:
 - The first manual GitHub Actions generation run succeeded.
 - Multiple items per day are supported after migration `0002_allow_multiple_items_per_day.sql`.
 - Editable D1-backed modes are supported after migration `0004_editable_modes.sql`.
+- Generation pause and archive rotation are supported after migration `0010_pause_and_archive_cycle.sql`.
 
 Before the first generated item existed, this returned `404`:
 
@@ -56,6 +57,7 @@ Expected result:
 - Active mode is `fictional_satire_news`.
 - The mode picker includes `Absurd Tech Breakthrough`.
 - The mode editor can load an existing mode.
+- The settings area includes `Pause generation` and `Homepage display`.
 - Usage counters and generation runs are visible.
 
 ### 2a. Test The Mode Editor
@@ -67,6 +69,18 @@ Expected result:
 - A YAML file is produced with `id`, `label`, `language`, `text_model`, `image_model`, `image_quality`, `image_style`, and `instructions`.
 
 To test import, use the import button with a YAML file in the same format, confirm the fields populate, then save the mode.
+
+### 2b. Test Pause And Archive Rotation
+
+Open `/admin`, enable `Pause generation`, set `Homepage display` to `Daily archive rotation`, and save settings.
+
+Expected result:
+
+- The manual run button becomes disabled.
+- `/` still shows a published archive item.
+- The daily GitHub Actions generator records a skipped run instead of creating a new item.
+
+Turn `Pause generation` off and set `Homepage display` to `Newest item` to resume normal behavior.
 
 ### 3. Run The Generator
 

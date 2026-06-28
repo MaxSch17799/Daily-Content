@@ -20,6 +20,8 @@ The first version supports:
 
 - View active mode.
 - Change active mode.
+- Pause or resume AI generation.
+- Choose whether the homepage shows the newest item or a daily rotating archive item.
 - Turn public lock on/off.
 - See recent generated items with thumbnails.
 - Hide or show generated items in the public archive.
@@ -35,6 +37,17 @@ The first version supports:
 The admin mode editor writes to the D1 `modes` table. The generator reads the active mode from D1 first, so changes made here affect the next generation run without changing files in GitHub.
 
 The YAML files in `modes/en/*.yaml` remain as templates. Use the admin import button to load a YAML file into the editor, then save it to store it in D1. Use the export button to download the current editor values in the same YAML shape.
+
+## Pause And Archive Rotation
+
+`Pause generation` stops the daily generator before it calls OpenAI, uploads to R2, or sends push notifications. Scheduled GitHub Actions may still start, but the script records a skipped run and exits.
+
+`Homepage display` controls `/api/today`:
+
+- `Newest item`: show the newest published item.
+- `Daily archive rotation`: choose one published archive item based on the current date, changing once per day.
+
+The archive page continues to show all published items in normal newest-first order.
 
 ## Set Admin Password
 
@@ -86,6 +99,8 @@ The admin button calls:
 ```text
 POST /api/admin/dispatch-generation
 ```
+
+If generation is paused, the button is disabled and the dispatch API returns `generation_paused`.
 
 To enable it, add Cloudflare secret:
 
